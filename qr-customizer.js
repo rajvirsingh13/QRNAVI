@@ -13,13 +13,15 @@
  * - QR size
  * - Contrast/readability warning
  * - Safe-download protection
- * - Reliable PNG export with proper quiet zone
+ * - Reliable PNG export
+ * - Proper QR quiet zone
  *
  * IMPORTANT:
  * - QR payload/data is never changed by customization.
  * - No Apply button is required.
  * - Download is disabled when the color combination is unsafe.
- * - Exported PNG always gets a proper quiet zone around the QR.
+ * - Download becomes enabled only after the current settings
+ *   have successfully rendered.
  */
 
 const QRNAVI_CUSTOMIZER_CONFIG = {
@@ -38,20 +40,18 @@ const QRNAVI_CUSTOMIZER_CONFIG = {
     },
 
     /*
-     * WCAG-style minimum contrast.
-     * 4.5:1 is used conservatively for QR readability.
+     * Conservative minimum contrast for QR foreground/background.
      */
     minimumContrastRatio: 4.5,
 
     /*
-     * Quiet zone:
-     * QR standards recommend a clear area around the QR.
-     * 10% of the final image gives a strong margin for
-     * different QR densities and scanner conditions.
+     * Clear area around the QR.
+     * QR will occupy the inner area and the remaining area
+     * will stay as the selected background.
      */
     quietZoneRatio: 0.10,
 
-    renderDelay: 60
+    renderDelay: 80
 };
 
 
@@ -102,7 +102,9 @@ const STATE = {
 
     isRendering: false,
 
-    hasRenderedCurrentSettings: false
+    hasRenderedCurrentSettings: false,
+
+    renderVersion: 0
 };
 
 
@@ -110,7 +112,10 @@ const STATE = {
    INITIALIZATION
    ============================================================ */
 
-document.addEventListener("DOMContentLoaded", initCustomizer);
+document.addEventListener(
+    "DOMContentLoaded",
+    initCustomizer
+);
 
 
 function initCustomizer() {
@@ -126,8 +131,13 @@ function initCustomizer() {
         return;
     }
 
-    STATE.payload = String(savedState.payload);
-    STATE.type = String(savedState.type || "");
+    STATE.payload = String(
+        savedState.payload
+    );
+
+    STATE.type = String(
+        savedState.type || ""
+    );
 
     STATE.settings = {
         ...QRNAVI_CUSTOMIZER_CONFIG.defaultSettings,
@@ -137,6 +147,7 @@ function initCustomizer() {
     normalizeSettings();
 
     hideEmptyState();
+
     disableControls(false);
 
     syncControls();
@@ -154,56 +165,105 @@ function initCustomizer() {
    ============================================================ */
 
 function cacheDOM() {
-    DOM.qrOutput = document.getElementById("customizer-qr-output");
-    DOM.emptyState = document.getElementById("customizer-empty-state");
-    DOM.error = document.getElementById("customizer-error");
+    DOM.qrOutput =
+        document.getElementById(
+            "customizer-qr-output"
+        );
 
-    DOM.templateCards = Array.from(
-        document.querySelectorAll(".template-card")
-    );
+    DOM.emptyState =
+        document.getElementById(
+            "customizer-empty-state"
+        );
 
-    DOM.qrColorPicker = document.getElementById("qr-color-picker");
-    DOM.qrColorHex = document.getElementById("qr-color-hex");
-    DOM.qrColorPresets = document.getElementById("qr-color-presets");
+    DOM.error =
+        document.getElementById(
+            "customizer-error"
+        );
 
-    DOM.backgroundColorPicker = document.getElementById(
-        "background-color-picker"
-    );
 
-    DOM.backgroundColorHex = document.getElementById(
-        "background-color-hex"
-    );
+    DOM.templateCards =
+        Array.from(
+            document.querySelectorAll(
+                ".template-card"
+            )
+        );
 
-    DOM.backgroundColorPresets = document.getElementById(
-        "background-color-presets"
-    );
 
-    DOM.sizeOptions = Array.from(
-        document.querySelectorAll(".size-option")
-    );
+    DOM.qrColorPicker =
+        document.getElementById(
+            "qr-color-picker"
+        );
 
-    DOM.contrastFeedback = document.getElementById(
-        "contrast-feedback"
-    );
+    DOM.qrColorHex =
+        document.getElementById(
+            "qr-color-hex"
+        );
 
-    DOM.contrastStatus = document.getElementById(
-        "contrast-status"
-    );
+    DOM.qrColorPresets =
+        document.getElementById(
+            "qr-color-presets"
+        );
 
-    DOM.resetButton = document.getElementById(
-        "reset-customization"
-    );
 
-    DOM.downloadButton = document.getElementById(
-        "customizer-download"
-    );
+    DOM.backgroundColorPicker =
+        document.getElementById(
+            "background-color-picker"
+        );
+
+    DOM.backgroundColorHex =
+        document.getElementById(
+            "background-color-hex"
+        );
+
+    DOM.backgroundColorPresets =
+        document.getElementById(
+            "background-color-presets"
+        );
+
+
+    DOM.sizeOptions =
+        Array.from(
+            document.querySelectorAll(
+                ".size-option"
+            )
+        );
+
+
+    DOM.contrastFeedback =
+        document.getElementById(
+            "contrast-feedback"
+        );
+
+    DOM.contrastStatus =
+        document.getElementById(
+            "contrast-status"
+        );
+
+
+    DOM.resetButton =
+        document.getElementById(
+            "reset-customization"
+        );
+
+    DOM.downloadButton =
+        document.getElementById(
+            "customizer-download"
+        );
+
 
     if (DOM.error) {
-        DOM.error.setAttribute("aria-live", "polite");
+        DOM.error.setAttribute(
+            "aria-live",
+            "polite"
+        );
     }
 
+
     if (DOM.contrastFeedback) {
-        DOM.contrastFeedback.setAttribute("aria-live", "polite");
+        DOM.contrastFeedback.setAttribute(
+            "aria-live",
+            "assertive"
+        );
     }
 }
 
@@ -213,102 +273,164 @@ function cacheDOM() {
    ============================================================ */
 
 function bindEvents() {
-    DOM.templateCards.forEach((card) => {
-        card.addEventListener("click", () => {
-            const template = card.dataset.template || "";
 
-            applyTemplate(template);
-        });
+    /* ---------------- Templates ---------------- */
+
+    DOM.templateCards.forEach((card) => {
+        card.addEventListener(
+            "click",
+            () => {
+                const template =
+                    card.dataset.template || "";
+
+                applyTemplate(template);
+            }
+        );
     });
 
 
+    /* ---------------- QR Color Picker ---------------- */
+
     if (DOM.qrColorPicker) {
-        DOM.qrColorPicker.addEventListener("input", (event) => {
-            const value = normalizeHex(event.target.value);
+        DOM.qrColorPicker.addEventListener(
+            "input",
+            (event) => {
+                const value =
+                    normalizeHex(
+                        event.target.value
+                    );
 
-            if (!value) {
-                return;
+                if (!value) {
+                    return;
+                }
+
+                STATE.settings.foreground =
+                    value;
+
+                STATE.settings.template =
+                    "custom";
+
+                markDownloadPending();
+
+                syncControls();
+
+                updateReadabilityFeedback();
+
+                scheduleRender();
             }
-
-            STATE.settings.foreground = value;
-            STATE.settings.template = "custom";
-
-            markDownloadPending();
-            syncControls();
-            updateReadabilityFeedback();
-            scheduleRender();
-        });
+        );
     }
 
+
+    /* ---------------- QR HEX ---------------- */
 
     if (DOM.qrColorHex) {
-        DOM.qrColorHex.addEventListener("input", (event) => {
-            const value = normalizeHex(event.target.value);
+        DOM.qrColorHex.addEventListener(
+            "input",
+            (event) => {
+                const value =
+                    normalizeHex(
+                        event.target.value
+                    );
 
-            if (!value) {
                 /*
-                 * Do not destroy the current valid QR color while
-                 * the user is typing a HEX value.
+                 * Keep current valid color while the user
+                 * is still typing the HEX value.
                  */
-                return;
+                if (!value) {
+                    return;
+                }
+
+                STATE.settings.foreground =
+                    value;
+
+                STATE.settings.template =
+                    "custom";
+
+                markDownloadPending();
+
+                syncControls();
+
+                updateReadabilityFeedback();
+
+                scheduleRender();
             }
-
-            STATE.settings.foreground = value;
-            STATE.settings.template = "custom";
-
-            markDownloadPending();
-            syncControls();
-            updateReadabilityFeedback();
-            scheduleRender();
-        });
+        );
     }
 
+
+    /* ---------------- Background Picker ---------------- */
 
     if (DOM.backgroundColorPicker) {
         DOM.backgroundColorPicker.addEventListener(
             "input",
             (event) => {
-                const value = normalizeHex(event.target.value);
+                const value =
+                    normalizeHex(
+                        event.target.value
+                    );
 
                 if (!value) {
                     return;
                 }
 
-                STATE.settings.background = value;
-                STATE.settings.template = "custom";
+                STATE.settings.background =
+                    value;
+
+                STATE.settings.template =
+                    "custom";
 
                 markDownloadPending();
+
                 syncControls();
+
                 updateReadabilityFeedback();
+
                 scheduleRender();
             }
         );
     }
 
+
+    /* ---------------- Background HEX ---------------- */
 
     if (DOM.backgroundColorHex) {
         DOM.backgroundColorHex.addEventListener(
             "input",
             (event) => {
-                const value = normalizeHex(event.target.value);
+                const value =
+                    normalizeHex(
+                        event.target.value
+                    );
 
                 if (!value) {
                     return;
                 }
 
-                STATE.settings.background = value;
-                STATE.settings.template = "custom";
+                STATE.settings.background =
+                    value;
+
+                STATE.settings.template =
+                    "custom";
 
                 markDownloadPending();
+
                 syncControls();
+
                 updateReadabilityFeedback();
+
                 scheduleRender();
             }
         );
     }
 
 
-    bindPresetEvents(DOM.qrColorPresets, "foreground");
+    /* ---------------- Presets ---------------- */
+
+    bindPresetEvents(
+        DOM.qrColorPresets,
+        "foreground"
+    );
 
     bindPresetEvents(
         DOM.backgroundColorPresets,
@@ -316,27 +438,45 @@ function bindEvents() {
     );
 
 
+    /* ---------------- Sizes ---------------- */
+
     DOM.sizeOptions.forEach((option) => {
-        option.addEventListener("click", () => {
-            const size = Number(option.dataset.size);
+        option.addEventListener(
+            "click",
+            () => {
+                const size =
+                    Number(
+                        option.dataset.size
+                    );
 
-            if (!Number.isFinite(size)) {
-                return;
+                if (!Number.isFinite(size)) {
+                    return;
+                }
+
+                STATE.settings.size =
+                    clampSize(size);
+
+                markDownloadPending();
+
+                syncControls();
+
+                scheduleRender();
             }
-
-            STATE.settings.size = clampSize(size);
-
-            markDownloadPending();
-            syncControls();
-            scheduleRender();
-        });
+        );
     });
 
 
+    /* ---------------- Reset ---------------- */
+
     if (DOM.resetButton) {
-        DOM.resetButton.addEventListener("click", resetCustomization);
+        DOM.resetButton.addEventListener(
+            "click",
+            resetCustomization
+        );
     }
 
+
+    /* ---------------- Download ---------------- */
 
     if (DOM.downloadButton) {
         DOM.downloadButton.addEventListener(
@@ -351,38 +491,59 @@ function bindEvents() {
    PRESET EVENTS
    ============================================================ */
 
-function bindPresetEvents(container, target) {
+function bindPresetEvents(
+    container,
+    target
+) {
     if (!container) {
         return;
     }
 
-    const buttons = Array.from(
-        container.querySelectorAll("[data-color]")
-    );
+
+    const buttons =
+        Array.from(
+            container.querySelectorAll(
+                "[data-color]"
+            )
+        );
+
 
     buttons.forEach((button) => {
-        button.addEventListener("click", () => {
-            const value = normalizeHex(
-                button.dataset.color || ""
-            );
+        button.addEventListener(
+            "click",
+            () => {
+                const value =
+                    normalizeHex(
+                        button.dataset.color || ""
+                    );
 
-            if (!value) {
-                return;
+                if (!value) {
+                    return;
+                }
+
+
+                if (target === "foreground") {
+                    STATE.settings.foreground =
+                        value;
+                } else {
+                    STATE.settings.background =
+                        value;
+                }
+
+
+                STATE.settings.template =
+                    "custom";
+
+
+                markDownloadPending();
+
+                syncControls();
+
+                updateReadabilityFeedback();
+
+                scheduleRender();
             }
-
-            if (target === "foreground") {
-                STATE.settings.foreground = value;
-            } else {
-                STATE.settings.background = value;
-            }
-
-            STATE.settings.template = "custom";
-
-            markDownloadPending();
-            syncControls();
-            updateReadabilityFeedback();
-            scheduleRender();
-        });
+        );
     });
 }
 
@@ -392,7 +553,9 @@ function bindPresetEvents(container, target) {
    ============================================================ */
 
 function applyTemplate(template) {
+
     const templates = {
+
         classic: {
             foreground: "#071426",
             background: "#FFFFFF"
@@ -408,10 +571,6 @@ function applyTemplate(template) {
             background: "#FFFFFF"
         },
 
-        /*
-         * Darker blue is intentionally used here so the
-         * built-in template remains sufficiently readable.
-         */
         modern: {
             foreground: "#145DA0",
             background: "#F7F9FC"
@@ -427,24 +586,31 @@ function applyTemplate(template) {
             background: "#FFF7ED"
         },
 
-        /*
-         * Darker blue + light background for reliable contrast.
-         */
         professional: {
             foreground: "#0B63CE",
             background: "#F0F7FF"
         }
     };
 
-    const selected = templates[template];
+
+    const selected =
+        templates[template];
+
 
     if (!selected) {
         return;
     }
 
-    STATE.settings.template = template;
-    STATE.settings.foreground = selected.foreground;
-    STATE.settings.background = selected.background;
+
+    STATE.settings.template =
+        template;
+
+    STATE.settings.foreground =
+        selected.foreground;
+
+    STATE.settings.background =
+        selected.background;
+
 
     markDownloadPending();
 
@@ -461,40 +627,74 @@ function applyTemplate(template) {
    ============================================================ */
 
 function normalizeSettings() {
+
     const foreground =
-        normalizeHex(STATE.settings.foreground);
+        normalizeHex(
+            STATE.settings.foreground
+        );
 
     const background =
-        normalizeHex(STATE.settings.background);
+        normalizeHex(
+            STATE.settings.background
+        );
+
 
     STATE.settings.foreground =
         foreground ||
-        QRNAVI_CUSTOMIZER_CONFIG.defaultSettings.foreground;
+        QRNAVI_CUSTOMIZER_CONFIG
+            .defaultSettings
+            .foreground;
+
 
     STATE.settings.background =
         background ||
-        QRNAVI_CUSTOMIZER_CONFIG.defaultSettings.background;
+        QRNAVI_CUSTOMIZER_CONFIG
+            .defaultSettings
+            .background;
+
 
     STATE.settings.size =
-        clampSize(STATE.settings.size);
+        clampSize(
+            STATE.settings.size
+        );
+
 
     if (
-        typeof STATE.settings.template !== "string" ||
+        typeof STATE.settings.template !==
+            "string" ||
         !STATE.settings.template
     ) {
-        STATE.settings.template = "classic";
+        STATE.settings.template =
+            "classic";
     }
 }
 
 
+/* ============================================================
+   SIZE
+   ============================================================ */
+
 function clampSize(size) {
-    const numericSize = Number(size);
 
-    const allowedSizes = [220, 320, 400, 512];
+    const numericSize =
+        Number(size);
 
-    if (allowedSizes.includes(numericSize)) {
+    const allowedSizes = [
+        220,
+        320,
+        400,
+        512
+    ];
+
+
+    if (
+        allowedSizes.includes(
+            numericSize
+        )
+    ) {
         return numericSize;
     }
+
 
     return 320;
 }
@@ -505,23 +705,28 @@ function clampSize(size) {
    ============================================================ */
 
 function getSavedState() {
+
     try {
-        /*
-         * Shared download system is preferred when available.
-         */
+
         if (
             window.QRNAVI_DOWNLOAD &&
-            typeof window.QRNAVI_DOWNLOAD.getCustomizerState ===
+            typeof window.QRNAVI_DOWNLOAD
+                .getCustomizerState ===
                 "function"
         ) {
+
             const state =
-                window.QRNAVI_DOWNLOAD.getCustomizerState();
+                window.QRNAVI_DOWNLOAD
+                    .getCustomizerState();
+
 
             if (state) {
                 return state;
             }
         }
+
     } catch (error) {
+
         console.warn(
             "QRNAVI: Unable to read shared customizer state.",
             error
@@ -530,16 +735,23 @@ function getSavedState() {
 
 
     try {
-        const raw = sessionStorage.getItem(
-            QRNAVI_CUSTOMIZER_CONFIG.storageKey
-        );
+
+        const raw =
+            sessionStorage.getItem(
+                QRNAVI_CUSTOMIZER_CONFIG
+                    .storageKey
+            );
+
 
         if (!raw) {
             return null;
         }
 
+
         return JSON.parse(raw);
+
     } catch (error) {
+
         console.warn(
             "QRNAVI: Unable to read sessionStorage state.",
             error
@@ -555,20 +767,24 @@ function getSavedState() {
    ============================================================ */
 
 function syncControls() {
+
     if (DOM.qrColorPicker) {
         DOM.qrColorPicker.value =
             STATE.settings.foreground;
     }
+
 
     if (DOM.qrColorHex) {
         DOM.qrColorHex.value =
             STATE.settings.foreground;
     }
 
+
     if (DOM.backgroundColorPicker) {
         DOM.backgroundColorPicker.value =
             STATE.settings.background;
     }
+
 
     if (DOM.backgroundColorHex) {
         DOM.backgroundColorHex.value =
@@ -576,34 +792,58 @@ function syncControls() {
     }
 
 
-    DOM.sizeOptions.forEach((option) => {
-        const optionSize = Number(option.dataset.size);
+    DOM.sizeOptions.forEach(
+        (option) => {
 
-        option.classList.toggle(
-            "active",
-            optionSize === STATE.settings.size
-        );
-
-        option.setAttribute(
-            "aria-pressed",
-            optionSize === STATE.settings.size
-                ? "true"
-                : "false"
-        );
-    });
+            const optionSize =
+                Number(
+                    option.dataset.size
+                );
 
 
-    DOM.templateCards.forEach((card) => {
-        const isActive =
-            card.dataset.template === STATE.settings.template;
+            const active =
+                optionSize ===
+                STATE.settings.size;
 
-        card.classList.toggle("active", isActive);
 
-        card.setAttribute(
-            "aria-pressed",
-            isActive ? "true" : "false"
-        );
-    });
+            option.classList.toggle(
+                "active",
+                active
+            );
+
+
+            option.setAttribute(
+                "aria-pressed",
+                active
+                    ? "true"
+                    : "false"
+            );
+        }
+    );
+
+
+    DOM.templateCards.forEach(
+        (card) => {
+
+            const active =
+                card.dataset.template ===
+                STATE.settings.template;
+
+
+            card.classList.toggle(
+                "active",
+                active
+            );
+
+
+            card.setAttribute(
+                "aria-pressed",
+                active
+                    ? "true"
+                    : "false"
+            );
+        }
+    );
 }
 
 
@@ -612,13 +852,13 @@ function syncControls() {
    ============================================================ */
 
 function updateReadabilityFeedback() {
-    if (!DOM.contrastStatus && !DOM.contrastFeedback) {
-        return;
-    }
 
-    const result = getColorSafetyResult();
+    const result =
+        getColorSafetyResult();
+
 
     if (DOM.contrastStatus) {
+
         DOM.contrastStatus.textContent =
             `Contrast ratio: ${result.ratio.toFixed(2)}:1`;
     }
@@ -629,29 +869,31 @@ function updateReadabilityFeedback() {
     }
 
 
+    DOM.contrastFeedback.classList.remove(
+        "safe",
+        "warning",
+        "danger",
+        "unsafe"
+    );
+
+
     if (result.safe) {
+
         DOM.contrastFeedback.textContent =
             "✓ Good QR contrast. This color combination is suitable for download.";
 
-        DOM.contrastFeedback.classList.remove(
-            "warning",
-            "danger",
-            "unsafe"
+        DOM.contrastFeedback.classList.add(
+            "safe"
         );
-
-        DOM.contrastFeedback.classList.add("safe");
 
         return;
     }
 
 
     if (!result.darkOnLight) {
-        DOM.contrastFeedback.textContent =
-            "⚠️ For better scanner compatibility, use a darker QR color on a lighter background. Download is disabled.";
 
-        DOM.contrastFeedback.classList.remove(
-            "safe"
-        );
+        DOM.contrastFeedback.textContent =
+            "⚠️ This color combination may be difficult for scanners to read. Use a darker QR color on a lighter background. Download is disabled.";
 
         DOM.contrastFeedback.classList.add(
             "warning",
@@ -667,10 +909,6 @@ function updateReadabilityFeedback() {
             2
         )}:1). Choose a darker QR color or a lighter background. Download is disabled.`;
 
-    DOM.contrastFeedback.classList.remove(
-        "safe"
-    );
-
     DOM.contrastFeedback.classList.add(
         "warning",
         "unsafe"
@@ -678,25 +916,25 @@ function updateReadabilityFeedback() {
 }
 
 
-/*
- * Conservative QR safety check.
- *
- * Requirements:
- * 1. Contrast must be at least 4.5:1.
- * 2. QR foreground must be darker than background.
- *
- * This does NOT claim mathematical guarantee that every scanner
- * will read every QR. It simply blocks combinations that are
- * known to be less reliable.
- */
+/* ============================================================
+   COLOR SAFETY CHECK
+   ============================================================ */
+
 function getColorSafetyResult() {
+
     const foreground =
-        normalizeHex(STATE.settings.foreground);
+        normalizeHex(
+            STATE.settings.foreground
+        );
 
     const background =
-        normalizeHex(STATE.settings.background);
+        normalizeHex(
+            STATE.settings.background
+        );
+
 
     if (!foreground || !background) {
+
         return {
             ratio: 0,
             darkOnLight: false,
@@ -712,7 +950,11 @@ function getColorSafetyResult() {
         hexToRGB(background);
 
 
-    if (!foregroundRGB || !backgroundRGB) {
+    if (
+        !foregroundRGB ||
+        !backgroundRGB
+    ) {
+
         return {
             ratio: 0,
             darkOnLight: false,
@@ -722,10 +964,15 @@ function getColorSafetyResult() {
 
 
     const foregroundLuminance =
-        getRelativeLuminance(foregroundRGB);
+        getRelativeLuminance(
+            foregroundRGB
+        );
+
 
     const backgroundLuminance =
-        getRelativeLuminance(backgroundRGB);
+        getRelativeLuminance(
+            backgroundRGB
+        );
 
 
     const ratio =
@@ -736,12 +983,14 @@ function getColorSafetyResult() {
 
 
     const darkOnLight =
-        foregroundLuminance < backgroundLuminance;
+        foregroundLuminance <
+        backgroundLuminance;
 
 
     const safe =
         ratio >=
-            QRNAVI_CUSTOMIZER_CONFIG.minimumContrastRatio &&
+            QRNAVI_CUSTOMIZER_CONFIG
+                .minimumContrastRatio &&
         darkOnLight;
 
 
@@ -758,50 +1007,85 @@ function getColorSafetyResult() {
    ============================================================ */
 
 function normalizeHex(value) {
+
     if (typeof value !== "string") {
         return null;
     }
 
-    const cleaned = value.trim();
 
-    if (!/^#[0-9A-Fa-f]{6}$/.test(cleaned)) {
+    const cleaned =
+        value.trim();
+
+
+    if (
+        !/^#[0-9A-Fa-f]{6}$/.test(
+            cleaned
+        )
+    ) {
         return null;
     }
+
 
     return cleaned.toUpperCase();
 }
 
 
 function hexToRGB(hex) {
-    const normalized = normalizeHex(hex);
+
+    const normalized =
+        normalizeHex(hex);
+
 
     if (!normalized) {
         return null;
     }
 
+
     return {
-        r: parseInt(normalized.slice(1, 3), 16),
-        g: parseInt(normalized.slice(3, 5), 16),
-        b: parseInt(normalized.slice(5, 7), 16)
+        r: parseInt(
+            normalized.slice(1, 3),
+            16
+        ),
+
+        g: parseInt(
+            normalized.slice(3, 5),
+            16
+        ),
+
+        b: parseInt(
+            normalized.slice(5, 7),
+            16
+        )
     };
 }
 
 
 function getRelativeLuminance(rgb) {
+
     const values = [
         rgb.r / 255,
         rgb.g / 255,
         rgb.b / 255
-    ].map((value) => {
-        if (value <= 0.03928) {
-            return value / 12.92;
-        }
+    ].map(
+        (value) => {
 
-        return Math.pow(
-            (value + 0.055) / 1.055,
-            2.4
-        );
-    });
+            if (
+                value <=
+                0.03928
+            ) {
+                return (
+                    value / 12.92
+                );
+            }
+
+
+            return Math.pow(
+                (value + 0.055) /
+                    1.055,
+                2.4
+            );
+        }
+    );
 
 
     return (
@@ -812,12 +1096,24 @@ function getRelativeLuminance(rgb) {
 }
 
 
-function getContrastRatio(luminanceA, luminanceB) {
+function getContrastRatio(
+    luminanceA,
+    luminanceB
+) {
+
     const lighter =
-        Math.max(luminanceA, luminanceB);
+        Math.max(
+            luminanceA,
+            luminanceB
+        );
+
 
     const darker =
-        Math.min(luminanceA, luminanceB);
+        Math.min(
+            luminanceA,
+            luminanceB
+        );
+
 
     return (
         (lighter + 0.05) /
@@ -831,13 +1127,28 @@ function getContrastRatio(luminanceA, luminanceB) {
    ============================================================ */
 
 function scheduleRender() {
-    clearTimeout(STATE.renderTimer);
 
-    markDownloadPending();
+    clearTimeout(
+        STATE.renderTimer
+    );
 
-    STATE.renderTimer = setTimeout(() => {
-        renderQR();
-    }, QRNAVI_CUSTOMIZER_CONFIG.renderDelay);
+
+    STATE.renderTimer = setTimeout(
+        () => {
+
+            /*
+             * IMPORTANT:
+             * Reset the timer reference when the scheduled
+             * render actually starts.
+             */
+            STATE.renderTimer = null;
+
+            renderQR();
+        },
+
+        QRNAVI_CUSTOMIZER_CONFIG
+            .renderDelay
+    );
 }
 
 
@@ -846,14 +1157,21 @@ function scheduleRender() {
    ============================================================ */
 
 async function renderQR() {
+
     if (!DOM.qrOutput) {
         return;
     }
+
 
     if (!STATE.payload) {
         return;
     }
 
+
+    /*
+     * If another render is active, do not start a second
+     * render simultaneously.
+     */
     if (STATE.isRendering) {
         return;
     }
@@ -861,121 +1179,191 @@ async function renderQR() {
 
     STATE.isRendering = true;
 
-    STATE.hasRenderedCurrentSettings = false;
+    STATE.hasRenderedCurrentSettings =
+        false;
 
     setDownloadEnabled(false);
 
     clearError();
 
+
+    const thisRenderVersion =
+        ++STATE.renderVersion;
+
+
     try {
+
         const QRCodeConstructor =
             await loadQRCodeLibrary();
 
 
         /*
-         * Settings can change while the library is loading.
-         * Read them only after the library is ready.
+         * If another render was started while the library
+         * was loading, this render is no longer current.
          */
-        const payload = STATE.payload;
+        if (
+            thisRenderVersion !==
+            STATE.renderVersion
+        ) {
+            return;
+        }
+
+
+        const payload =
+            STATE.payload;
+
 
         const finalSize =
-            clampSize(STATE.settings.size);
+            clampSize(
+                STATE.settings.size
+            );
+
 
         const foreground =
-            normalizeHex(STATE.settings.foreground) ||
-            QRNAVI_CUSTOMIZER_CONFIG.defaultSettings.foreground;
+            normalizeHex(
+                STATE.settings.foreground
+            ) ||
+            QRNAVI_CUSTOMIZER_CONFIG
+                .defaultSettings
+                .foreground;
+
 
         const background =
-            normalizeHex(STATE.settings.background) ||
-            QRNAVI_CUSTOMIZER_CONFIG.defaultSettings.background;
+            normalizeHex(
+                STATE.settings.background
+            ) ||
+            QRNAVI_CUSTOMIZER_CONFIG
+                .defaultSettings
+                .background;
 
 
         /*
-         * Proper QR quiet zone.
-         *
-         * Instead of generating the QR directly edge-to-edge,
-         * generate the QR inside an inner canvas and place it
-         * onto a larger final canvas with a clean background.
+         * Keep enough clear space around the QR.
          */
-        const quietZone = Math.max(
-            16,
-            Math.round(
-                finalSize *
-                    QRNAVI_CUSTOMIZER_CONFIG.quietZoneRatio
-            )
-        );
+        const quietZone =
+            Math.max(
+                16,
+                Math.round(
+                    finalSize *
+                        QRNAVI_CUSTOMIZER_CONFIG
+                            .quietZoneRatio
+                )
+            );
 
 
         const innerSize =
-            finalSize - quietZone * 2;
+            finalSize -
+            quietZone * 2;
 
 
-        if (innerSize <= 0) {
+        if (innerSize < 100) {
             throw new Error(
-                "QR preview size is too small."
+                "QR size is too small."
             );
         }
 
 
         /*
-         * Temporary container for QRCode.js.
+         * Temporary QRCode.js container.
          */
         const tempContainer =
-            document.createElement("div");
+            document.createElement(
+                "div"
+            );
+
 
         tempContainer.setAttribute(
             "aria-hidden",
             "true"
         );
 
-        tempContainer.style.position = "absolute";
-        tempContainer.style.left = "-100000px";
-        tempContainer.style.top = "0";
+
+        tempContainer.style.position =
+            "absolute";
+
+        tempContainer.style.left =
+            "-100000px";
+
+        tempContainer.style.top =
+            "0";
+
         tempContainer.style.width =
             `${innerSize}px`;
+
         tempContainer.style.height =
             `${innerSize}px`;
-        tempContainer.style.overflow = "hidden";
 
-        document.body.appendChild(tempContainer);
+        tempContainer.style.overflow =
+            "hidden";
+
+
+        document.body.appendChild(
+            tempContainer
+        );
 
 
         try {
-            new QRCodeConstructor(tempContainer, {
-                text: payload,
 
-                width: innerSize,
+            new QRCodeConstructor(
+                tempContainer,
+                {
+                    text: payload,
 
-                height: innerSize,
+                    width: innerSize,
 
-                colorDark: foreground,
+                    height: innerSize,
 
-                colorLight: background,
+                    colorDark:
+                        foreground,
 
-                correctLevel:
-                    QRCodeConstructor.CorrectLevel.M
-            });
+                    colorLight:
+                        background,
+
+                    correctLevel:
+                        QRCodeConstructor
+                            .CorrectLevel
+                            .M
+                }
+            );
 
 
             /*
-             * QRCode.js creates its canvas asynchronously in some
-             * browser situations, so locate the canvas carefully.
+             * QRCode.js normally creates a canvas.
+             * Image fallback is also supported.
              */
-            const sourceCanvas =
-                await waitForCanvas(tempContainer);
+            const source =
+                await waitForQRSource(
+                    tempContainer
+                );
 
 
             /*
-             * Final canvas.
-             *
-             * This is the canvas displayed in the customizer
-             * and later exported.
+             * Make sure this render is still the
+             * latest requested render.
+             */
+            if (
+                thisRenderVersion !==
+                STATE.renderVersion
+            ) {
+                return;
+            }
+
+
+            /*
+             * Final canvas includes the quiet zone.
              */
             const finalCanvas =
-                document.createElement("canvas");
+                document.createElement(
+                    "canvas"
+                );
 
-            finalCanvas.width = finalSize;
-            finalCanvas.height = finalSize;
+
+            finalCanvas.width =
+                finalSize;
+
+            finalCanvas.height =
+                finalSize;
+
 
             finalCanvas.setAttribute(
                 "role",
@@ -988,9 +1376,6 @@ async function renderQR() {
             );
 
 
-            /*
-             * alpha:false ensures an opaque PNG background.
-             */
             const context =
                 finalCanvas.getContext(
                     "2d",
@@ -1008,9 +1393,11 @@ async function renderQR() {
 
 
             /*
-             * Paint the complete background first.
+             * Completely opaque background.
              */
-            context.fillStyle = background;
+            context.fillStyle =
+                background;
+
 
             context.fillRect(
                 0,
@@ -1021,115 +1408,224 @@ async function renderQR() {
 
 
             /*
-             * Disable image smoothing so QR modules remain
-             * sharp and square.
+             * QR must remain sharp.
              */
-            context.imageSmoothingEnabled = false;
+            context.imageSmoothingEnabled =
+                false;
 
 
             /*
-             * Place QR inside the quiet zone.
+             * Draw QR inside the quiet zone.
              */
-            context.drawImage(
-                sourceCanvas,
-                quietZone,
-                quietZone,
-                innerSize,
-                innerSize
+            if (
+                source.type ===
+                "canvas"
+            ) {
+
+                context.drawImage(
+                    source.element,
+                    quietZone,
+                    quietZone,
+                    innerSize,
+                    innerSize
+                );
+
+            } else {
+
+                context.drawImage(
+                    source.element,
+                    quietZone,
+                    quietZone,
+                    innerSize,
+                    innerSize
+                );
+            }
+
+
+            /*
+             * Show final QR.
+             */
+            DOM.qrOutput.innerHTML =
+                "";
+
+            DOM.qrOutput.appendChild(
+                finalCanvas
             );
 
 
-            /*
-             * Replace preview with the final QR canvas.
-             */
-            DOM.qrOutput.innerHTML = "";
+            STATE.hasRenderedCurrentSettings =
+                true;
 
-            DOM.qrOutput.appendChild(finalCanvas);
-
-
-            STATE.hasRenderedCurrentSettings = true;
 
             updateReadabilityFeedback();
 
-            updateDownloadAvailability(finalCanvas);
+
+            /*
+             * Download is enabled only if:
+             * - render is current
+             * - QR exists
+             * - colors are safe
+             */
+            updateDownloadAvailability(
+                finalCanvas
+            );
+
         } finally {
+
             tempContainer.remove();
         }
+
     } catch (error) {
+
         console.error(
             "QRNAVI customizer render error:",
             error
         );
 
-        STATE.hasRenderedCurrentSettings = false;
+
+        STATE.hasRenderedCurrentSettings =
+            false;
+
 
         setDownloadEnabled(false);
+
 
         showError(
             "QR code could not be generated. Please try again."
         );
+
     } finally {
-        STATE.isRendering = false;
+
+        STATE.isRendering =
+            false;
+
 
         /*
-         * If settings changed during rendering, schedule a
-         * fresh render using the latest settings.
+         * If settings changed while the previous render
+         * was running, render the latest settings.
          */
         if (
-            STATE.renderTimer === null &&
-            STATE.hasRenderedCurrentSettings
+            STATE.renderVersion !==
+            thisRenderVersion
         ) {
-            updateDownloadAvailability(
-                getPreviewCanvas()
-            );
+
+            scheduleRender();
+
+            return;
         }
+
+
+        updateDownloadAvailability(
+            getPreviewCanvas()
+        );
     }
 }
 
 
 /* ============================================================
-   CANVAS WAIT
+   QR SOURCE WAIT
    ============================================================ */
 
-function waitForCanvas(container) {
-    return new Promise((resolve, reject) => {
-        const existingCanvas =
-            container.querySelector("canvas");
+function waitForQRSource(
+    container
+) {
 
-        if (existingCanvas) {
-            resolve(existingCanvas);
-            return;
-        }
+    return new Promise(
+        (resolve, reject) => {
+
+            const findSource = () => {
+
+                const canvas =
+                    container.querySelector(
+                        "canvas"
+                    );
 
 
-        let attempts = 0;
+                if (canvas) {
 
-        const maxAttempts = 100;
+                    resolve({
+                        type: "canvas",
+                        element: canvas
+                    });
 
-        const timer = setInterval(() => {
-            attempts += 1;
+                    return true;
+                }
 
-            const canvas =
-                container.querySelector("canvas");
 
-            if (canvas) {
-                clearInterval(timer);
-                resolve(canvas);
+                const image =
+                    container.querySelector(
+                        "img"
+                    );
+
+
+                if (
+                    image &&
+                    image.complete &&
+                    image.naturalWidth > 0
+                ) {
+
+                    resolve({
+                        type: "image",
+                        element: image
+                    });
+
+                    return true;
+                }
+
+
+                return false;
+            };
+
+
+            if (findSource()) {
                 return;
             }
 
 
-            if (attempts >= maxAttempts) {
-                clearInterval(timer);
+            let attempts = 0;
 
-                reject(
-                    new Error(
-                        "QR canvas was not created."
-                    )
+            const maxAttempts = 100;
+
+
+            const timer =
+                setInterval(
+                    () => {
+
+                        attempts += 1;
+
+
+                        if (findSource()) {
+
+                            clearInterval(
+                                timer
+                            );
+
+                            return;
+                        }
+
+
+                        if (
+                            attempts >=
+                            maxAttempts
+                        ) {
+
+                            clearInterval(
+                                timer
+                            );
+
+
+                            reject(
+                                new Error(
+                                    "QR image was not created."
+                                )
+                            );
+                        }
+
+                    },
+                    20
                 );
-            }
-        }, 20);
-    });
+        }
+    );
 }
 
 
@@ -1138,8 +1634,11 @@ function waitForCanvas(container) {
    ============================================================ */
 
 function loadQRCodeLibrary() {
+
     if (window.QRCode) {
-        return Promise.resolve(window.QRCode);
+        return Promise.resolve(
+            window.QRCode
+        );
     }
 
 
@@ -1149,83 +1648,121 @@ function loadQRCodeLibrary() {
 
 
     STATE.qrLibraryPromise =
-        new Promise((resolve, reject) => {
-            const existingScript =
-                document.querySelector(
-                    'script[data-qrnavi-qrcode-library="true"]'
-                );
+        new Promise(
+            (resolve, reject) => {
+
+                const existingScript =
+                    document.querySelector(
+                        'script[data-qrnavi-qrcode-library="true"]'
+                    );
 
 
-            if (existingScript) {
-                existingScript.addEventListener(
-                    "load",
-                    () => {
-                        if (window.QRCode) {
-                            resolve(window.QRCode);
-                        } else {
+                if (existingScript) {
+
+                    existingScript.addEventListener(
+                        "load",
+                        () => {
+
+                            if (
+                                window.QRCode
+                            ) {
+
+                                resolve(
+                                    window.QRCode
+                                );
+
+                            } else {
+
+                                reject(
+                                    new Error(
+                                        "QRCode library loaded but is unavailable."
+                                    )
+                                );
+                            }
+
+                        },
+                        {
+                            once: true
+                        }
+                    );
+
+
+                    existingScript.addEventListener(
+                        "error",
+                        () => {
+
                             reject(
                                 new Error(
-                                    "QRCode library loaded but is unavailable."
+                                    "QRCode library failed to load."
                                 )
                             );
+
+                        },
+                        {
+                            once: true
                         }
-                    },
-                    { once: true }
-                );
+                    );
 
 
-                existingScript.addEventListener(
-                    "error",
-                    () => {
+                    return;
+                }
+
+
+                const script =
+                    document.createElement(
+                        "script"
+                    );
+
+
+                script.src =
+                    QRNAVI_CUSTOMIZER_CONFIG
+                        .qrLibraryUrl;
+
+
+                script.async = true;
+
+
+                script.dataset
+                    .qrnaviQrcodeLibrary =
+                    "true";
+
+
+                script.onload = () => {
+
+                    if (
+                        window.QRCode
+                    ) {
+
+                        resolve(
+                            window.QRCode
+                        );
+
+                    } else {
+
                         reject(
                             new Error(
-                                "QRCode library failed to load."
+                                "QRCode library loaded but is unavailable."
                             )
                         );
-                    },
-                    { once: true }
-                );
-
-                return;
-            }
+                    }
+                };
 
 
-            const script =
-                document.createElement("script");
+                script.onerror = () => {
 
-            script.src =
-                QRNAVI_CUSTOMIZER_CONFIG.qrLibraryUrl;
-
-            script.async = true;
-
-            script.dataset.qrnaviQrcodeLibrary =
-                "true";
-
-
-            script.onload = () => {
-                if (window.QRCode) {
-                    resolve(window.QRCode);
-                } else {
                     reject(
                         new Error(
-                            "QRCode library loaded but is unavailable."
+                            "Unable to load QRCode library."
                         )
                     );
-                }
-            };
+                };
 
 
-            script.onerror = () => {
-                reject(
-                    new Error(
-                        "Unable to load QRCode library."
-                    )
+                document.head.appendChild(
+                    script
                 );
-            };
-
-
-            document.head.appendChild(script);
-        });
+            }
+        );
 
 
     return STATE.qrLibraryPromise;
@@ -1237,11 +1774,15 @@ function loadQRCodeLibrary() {
    ============================================================ */
 
 function getPreviewCanvas() {
+
     if (!DOM.qrOutput) {
         return null;
     }
 
-    return DOM.qrOutput.querySelector("canvas");
+
+    return DOM.qrOutput.querySelector(
+        "canvas"
+    );
 }
 
 
@@ -1250,13 +1791,18 @@ function getPreviewCanvas() {
    ============================================================ */
 
 function markDownloadPending() {
-    STATE.hasRenderedCurrentSettings = false;
+
+    STATE.hasRenderedCurrentSettings =
+        false;
 
     setDownloadEnabled(false);
 }
 
 
-function updateDownloadAvailability(canvas) {
+function updateDownloadAvailability(
+    canvas
+) {
+
     if (!DOM.downloadButton) {
         return;
     }
@@ -1274,7 +1820,9 @@ function updateDownloadAvailability(canvas) {
     }
 
 
-    if (!STATE.hasRenderedCurrentSettings) {
+    if (
+        !STATE.hasRenderedCurrentSettings
+    ) {
         setDownloadEnabled(false);
         return;
     }
@@ -1294,27 +1842,38 @@ function updateDownloadAvailability(canvas) {
 }
 
 
-function setDownloadEnabled(enabled) {
+function setDownloadEnabled(
+    enabled
+) {
+
     if (!DOM.downloadButton) {
         return;
     }
 
-    DOM.downloadButton.disabled = !enabled;
+
+    DOM.downloadButton.disabled =
+        !enabled;
+
 
     DOM.downloadButton.setAttribute(
         "aria-disabled",
-        enabled ? "false" : "true"
+        enabled
+            ? "false"
+            : "true"
     );
 
 
     if (enabled) {
+
         DOM.downloadButton.removeAttribute(
             "title"
         );
+
     } else {
+
         DOM.downloadButton.setAttribute(
             "title",
-            "Choose a safer QR color combination and wait for the preview to update."
+            "Download is available after a safe color combination has been selected and the QR preview is ready."
         );
     }
 }
@@ -1325,16 +1884,16 @@ function setDownloadEnabled(enabled) {
    ============================================================ */
 
 async function downloadCustomizedQR() {
+
     /*
-     * Re-check safety immediately before download.
-     * This prevents downloading an unsafe QR even if some
-     * browser/event timing causes a stale button state.
+     * Always perform a fresh safety check.
      */
     const safety =
         getColorSafetyResult();
 
 
     if (!safety.safe) {
+
         updateReadabilityFeedback();
 
         setDownloadEnabled(false);
@@ -1348,7 +1907,9 @@ async function downloadCustomizedQR() {
     }
 
 
-    if (!STATE.hasRenderedCurrentSettings) {
+    if (
+        !STATE.hasRenderedCurrentSettings
+    ) {
         return;
     }
 
@@ -1358,6 +1919,7 @@ async function downloadCustomizedQR() {
 
 
     if (!sourceCanvas) {
+
         showError(
             "QR preview is not ready yet. Please wait a moment and try again."
         );
@@ -1369,11 +1931,9 @@ async function downloadCustomizedQR() {
 
 
     try {
+
         /*
-         * Create a fresh opaque export canvas.
-         *
-         * This prevents transparent-background issues and ensures
-         * the exact current background is included in the PNG.
+         * Make a completely opaque copy for PNG export.
          */
         const exportCanvas =
             createOpaqueExportCanvas(
@@ -1381,52 +1941,66 @@ async function downloadCustomizedQR() {
             );
 
 
+        /*
+         * Use the existing shared download system
+         * if it is already available.
+         */
         if (
             window.QRNAVI_DOWNLOAD &&
-            typeof window.QRNAVI_DOWNLOAD.downloadCanvas ===
+            typeof window.QRNAVI_DOWNLOAD
+                .downloadCanvas ===
                 "function"
         ) {
-            window.QRNAVI_DOWNLOAD.downloadCanvas(
-                exportCanvas,
-                "qrnavi-qr-code.png"
-            );
+
+            window.QRNAVI_DOWNLOAD
+                .downloadCanvas(
+                    exportCanvas,
+                    "qrnavi-qr-code.png"
+                );
 
             return;
         }
 
 
         /*
-         * If download-system.js is not available, load it.
+         * Load the existing download system only
+         * when it is actually needed.
          */
         await loadDownloadSystem();
 
 
         if (
             window.QRNAVI_DOWNLOAD &&
-            typeof window.QRNAVI_DOWNLOAD.downloadCanvas ===
+            typeof window.QRNAVI_DOWNLOAD
+                .downloadCanvas ===
                 "function"
         ) {
-            window.QRNAVI_DOWNLOAD.downloadCanvas(
-                exportCanvas,
-                "qrnavi-qr-code.png"
-            );
+
+            window.QRNAVI_DOWNLOAD
+                .downloadCanvas(
+                    exportCanvas,
+                    "qrnavi-qr-code.png"
+                );
 
             return;
         }
 
 
         /*
-         * Final local fallback.
+         * Final browser-native fallback.
          */
         downloadCanvasLocally(
             exportCanvas,
             "qrnavi-qr-code.png"
         );
+
     } catch (error) {
+
         console.error(
             "QRNAVI customizer download error:",
             error
         );
+
 
         showError(
             "Download failed. Please try again."
@@ -1439,16 +2013,28 @@ async function downloadCustomizedQR() {
    OPAQUE EXPORT CANVAS
    ============================================================ */
 
-function createOpaqueExportCanvas(sourceCanvas) {
-    const width = sourceCanvas.width;
-    const height = sourceCanvas.height;
+function createOpaqueExportCanvas(
+    sourceCanvas
+) {
+
+    const width =
+        sourceCanvas.width;
+
+    const height =
+        sourceCanvas.height;
 
 
     const exportCanvas =
-        document.createElement("canvas");
+        document.createElement(
+            "canvas"
+        );
 
-    exportCanvas.width = width;
-    exportCanvas.height = height;
+
+    exportCanvas.width =
+        width;
+
+    exportCanvas.height =
+        height;
 
 
     const context =
@@ -1477,9 +2063,11 @@ function createOpaqueExportCanvas(sourceCanvas) {
 
 
     /*
-     * Force a completely opaque background.
+     * Force an opaque background.
      */
-    context.fillStyle = background;
+    context.fillStyle =
+        background;
+
 
     context.fillRect(
         0,
@@ -1490,14 +2078,18 @@ function createOpaqueExportCanvas(sourceCanvas) {
 
 
     /*
-     * Preserve exact QR modules.
+     * Preserve sharp QR modules.
      */
-    context.imageSmoothingEnabled = false;
+    context.imageSmoothingEnabled =
+        false;
+
 
     context.drawImage(
         sourceCanvas,
         0,
-        0
+        0,
+        width,
+        height
     );
 
 
@@ -1510,105 +2102,143 @@ function createOpaqueExportCanvas(sourceCanvas) {
    ============================================================ */
 
 function loadDownloadSystem() {
-    return new Promise((resolve, reject) => {
-        if (
-            window.QRNAVI_DOWNLOAD &&
-            typeof window.QRNAVI_DOWNLOAD.downloadCanvas ===
-                "function"
-        ) {
-            resolve(window.QRNAVI_DOWNLOAD);
-            return;
-        }
 
+    return new Promise(
+        (resolve, reject) => {
 
-        const existingScript =
-            document.querySelector(
-                'script[data-qrnavi-download-system="true"]'
-            );
-
-
-        if (existingScript) {
-            existingScript.addEventListener(
-                "load",
-                () => {
-                    if (
-                        window.QRNAVI_DOWNLOAD &&
-                        typeof window.QRNAVI_DOWNLOAD.downloadCanvas ===
-                            "function"
-                    ) {
-                        resolve(
-                            window.QRNAVI_DOWNLOAD
-                        );
-                    } else {
-                        reject(
-                            new Error(
-                                "Download system loaded but is unavailable."
-                            )
-                        );
-                    }
-                },
-                { once: true }
-            );
-
-
-            existingScript.addEventListener(
-                "error",
-                () => {
-                    reject(
-                        new Error(
-                            "Download system failed to load."
-                        )
-                    );
-                },
-                { once: true }
-            );
-
-            return;
-        }
-
-
-        const script =
-            document.createElement("script");
-
-        script.src =
-            QRNAVI_CUSTOMIZER_CONFIG.downloadSystemUrl;
-
-        script.async = true;
-
-        script.dataset.qrnaviDownloadSystem =
-            "true";
-
-
-        script.onload = () => {
             if (
                 window.QRNAVI_DOWNLOAD &&
-                typeof window.QRNAVI_DOWNLOAD.downloadCanvas ===
+                typeof window.QRNAVI_DOWNLOAD
+                    .downloadCanvas ===
                     "function"
             ) {
+
                 resolve(
                     window.QRNAVI_DOWNLOAD
                 );
-            } else {
+
+                return;
+            }
+
+
+            const existingScript =
+                document.querySelector(
+                    'script[data-qrnavi-download-system="true"]'
+                );
+
+
+            if (existingScript) {
+
+                existingScript.addEventListener(
+                    "load",
+                    () => {
+
+                        if (
+                            window.QRNAVI_DOWNLOAD &&
+                            typeof window.QRNAVI_DOWNLOAD
+                                .downloadCanvas ===
+                                "function"
+                        ) {
+
+                            resolve(
+                                window.QRNAVI_DOWNLOAD
+                            );
+
+                        } else {
+
+                            reject(
+                                new Error(
+                                    "Download system loaded but is unavailable."
+                                )
+                            );
+                        }
+
+                    },
+                    {
+                        once: true
+                    }
+                );
+
+
+                existingScript.addEventListener(
+                    "error",
+                    () => {
+
+                        reject(
+                            new Error(
+                                "Download system failed to load."
+                            )
+                        );
+
+                    },
+                    {
+                        once: true
+                    }
+                );
+
+
+                return;
+            }
+
+
+            const script =
+                document.createElement(
+                    "script"
+                );
+
+
+            script.src =
+                QRNAVI_CUSTOMIZER_CONFIG
+                    .downloadSystemUrl;
+
+
+            script.async = true;
+
+
+            script.dataset
+                .qrnaviDownloadSystem =
+                "true";
+
+
+            script.onload = () => {
+
+                if (
+                    window.QRNAVI_DOWNLOAD &&
+                    typeof window.QRNAVI_DOWNLOAD
+                        .downloadCanvas ===
+                        "function"
+                ) {
+
+                    resolve(
+                        window.QRNAVI_DOWNLOAD
+                    );
+
+                } else {
+
+                    reject(
+                        new Error(
+                            "Download system loaded but is unavailable."
+                        )
+                    );
+                }
+            };
+
+
+            script.onerror = () => {
+
                 reject(
                     new Error(
-                        "Download system loaded but is unavailable."
+                        "Unable to load download system."
                     )
                 );
-            }
-        };
+            };
 
 
-        script.onerror = () => {
-            reject(
-                new Error(
-                    "Unable to load download system."
-                )
+            document.body.appendChild(
+                script
             );
-        };
-
-
-        document.body.appendChild(script);
-    });
+        }
+    );
 }
 
 
@@ -1620,20 +2250,34 @@ function downloadCanvasLocally(
     canvas,
     filename
 ) {
+
     const dataUrl =
-        canvas.toDataURL("image/png");
+        canvas.toDataURL(
+            "image/png"
+        );
 
 
     const link =
-        document.createElement("a");
+        document.createElement(
+            "a"
+        );
 
-    link.href = dataUrl;
 
-    link.download = filename;
+    link.href =
+        dataUrl;
 
-    document.body.appendChild(link);
+
+    link.download =
+        filename;
+
+
+    document.body.appendChild(
+        link
+    );
+
 
     link.click();
+
 
     link.remove();
 }
@@ -1644,12 +2288,19 @@ function downloadCanvasLocally(
    ============================================================ */
 
 function resetCustomization() {
-    clearTimeout(STATE.renderTimer);
 
-    STATE.renderTimer = null;
+    clearTimeout(
+        STATE.renderTimer
+    );
+
+
+    STATE.renderTimer =
+        null;
+
 
     STATE.settings = {
-        ...QRNAVI_CUSTOMIZER_CONFIG.defaultSettings
+        ...QRNAVI_CUSTOMIZER_CONFIG
+            .defaultSettings
     };
 
 
@@ -1669,22 +2320,35 @@ function resetCustomization() {
    UI HELPERS
    ============================================================ */
 
-function disableControls(disabled) {
+function disableControls(
+    disabled
+) {
+
     const controls = [
         ...DOM.templateCards,
+
         DOM.qrColorPicker,
+
         DOM.qrColorHex,
+
         DOM.backgroundColorPicker,
+
         DOM.backgroundColorHex,
+
         ...DOM.sizeOptions,
+
         DOM.resetButton,
+
         DOM.downloadButton
     ].filter(Boolean);
 
 
-    controls.forEach((control) => {
-        control.disabled = disabled;
-    });
+    controls.forEach(
+        (control) => {
+            control.disabled =
+                disabled;
+        }
+    );
 
 
     if (disabled) {
@@ -1694,13 +2358,18 @@ function disableControls(disabled) {
 
 
 function showEmptyState() {
+
     if (DOM.emptyState) {
-        DOM.emptyState.hidden = false;
+        DOM.emptyState.hidden =
+            false;
     }
 
+
     if (DOM.qrOutput) {
-        DOM.qrOutput.innerHTML = "";
+        DOM.qrOutput.innerHTML =
+            "";
     }
+
 
     clearError();
 
@@ -1709,20 +2378,28 @@ function showEmptyState() {
 
 
 function hideEmptyState() {
+
     if (DOM.emptyState) {
-        DOM.emptyState.hidden = true;
+        DOM.emptyState.hidden =
+            true;
     }
 }
 
 
 function showError(message) {
+
     if (!DOM.error) {
         return;
     }
 
-    DOM.error.textContent = message;
 
-    DOM.error.hidden = false;
+    DOM.error.textContent =
+        message;
+
+
+    DOM.error.hidden =
+        false;
+
 
     DOM.error.setAttribute(
         "role",
@@ -1732,13 +2409,19 @@ function showError(message) {
 
 
 function clearError() {
+
     if (!DOM.error) {
         return;
     }
 
-    DOM.error.textContent = "";
 
-    DOM.error.hidden = true;
+    DOM.error.textContent =
+        "";
+
+
+    DOM.error.hidden =
+        true;
+
 
     DOM.error.removeAttribute(
         "role"
@@ -1751,20 +2434,30 @@ function clearError() {
    ============================================================ */
 
 window.QRNAVI_CUSTOMIZER = {
-    getPayload: () => STATE.payload,
 
-    getType: () => STATE.type,
+    getPayload: () =>
+        STATE.payload,
+
+
+    getType: () =>
+        STATE.type,
+
 
     getSettings: () => ({
         ...STATE.settings
     }),
 
+
     getColorSafety: () =>
         getColorSafetyResult(),
 
+
     render: renderQR,
+
 
     reset: resetCustomization,
 
-    download: downloadCustomizedQR
+
+    download:
+        downloadCustomizedQR
 };
