@@ -1,2640 +1,1331 @@
-"use strict";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
 
-/*
- * ============================================================
- * QRNAVI — Premium QR Customizer
- * ============================================================
- *
- * Purpose:
- * - Adds a premium QR editor to the existing generator.
- * - Keeps the QR payload/data unchanged.
- * - Provides live customization:
- *      • Templates
- *      • QR foreground color
- *      • Background color
- *      • HEX color inputs
- *      • Preset colors
- *      • QR size
- *      • Readability / contrast feedback
- *      • Reset
- *      • Apply
- * - Designed for mobile-first and desktop layouts.
- * - Does NOT create a download system.
- * - download-system.js will handle downloading later.
- *
- * Dependencies:
- * - index.html
- * - style.css
- * - script.js
- *
- * Existing QRNAVI API used:
- * - window.QRNAVI.getCurrentQRCode()
- * - window.QRNAVI.getQRCodeOutput()
- * - window.QRNAVI.getCurrentPayload()
- * - window.QRNAVI.getSelectedType()
- *
- * ============================================================
- */
+    <meta
+        name="viewport"
+        content="width=1200"
+    >
 
-(function () {
-  const CUSTOMIZER_ID = "qrnavi-customizer";
+    <meta
+        name="description"
+        content="Customize your QR code with live color, template, background, size and readability controls using QRNAVI."
+    >
 
-  const DEFAULTS = {
-    foreground: "#071426",
-    background: "#ffffff",
-    size: 320,
-    template: "classic"
-  };
+    <meta
+        name="robots"
+        content="noindex, follow"
+    >
 
-  const SIZE_OPTIONS = [
-    {
-      value: 220,
-      label: "Small",
-      description: "Compact"
-    },
-    {
-      value: 320,
-      label: "Standard",
-      description: "Recommended"
-    },
-    {
-      value: 400,
-      label: "Large",
-      description: "High resolution"
-    },
-    {
-      value: 512,
-      label: "XL",
-      description: "Print friendly"
-    }
-  ];
+    <meta
+        name="theme-color"
+        content="#071426"
+    >
 
-  const COLOR_PRESETS = [
-    {
-      name: "Classic",
-      foreground: "#071426",
-      background: "#ffffff"
-    },
-    {
-      name: "Ocean",
-      foreground: "#0f5ed7",
-      background: "#ffffff"
-    },
-    {
-      name: "Midnight",
-      foreground: "#111827",
-      background: "#dbeafe"
-    },
-    {
-      name: "Royal",
-      foreground: "#4338ca",
-      background: "#ffffff"
-    },
-    {
-      name: "Forest",
-      foreground: "#166534",
-      background: "#f0fdf4"
-    },
-    {
-      name: "Berry",
-      foreground: "#9f1239",
-      background: "#fff1f2"
-    },
-    {
-      name: "Slate",
-      foreground: "#334155",
-      background: "#f8fafc"
-    },
-    {
-      name: "Dark",
-      foreground: "#ffffff",
-      background: "#071426"
-    }
-  ];
+    <meta
+        name="application-name"
+        content="QRNAVI"
+    >
 
-  const TEMPLATES = [
-    {
-      id: "classic",
-      name: "Classic",
-      description: "Clean & universal",
-      foreground: "#071426",
-      background: "#ffffff"
-    },
-    {
-      id: "business",
-      name: "Business",
-      description: "Professional & sharp",
-      foreground: "#0f172a",
-      background: "#f8fafc"
-    },
-    {
-      id: "social",
-      name: "Social",
-      description: "Modern & expressive",
-      foreground: "#4338ca",
-      background: "#eef2ff"
-    },
-    {
-      id: "modern",
-      name: "Modern",
-      description: "Fresh & minimal",
-      foreground: "#0369a1",
-      background: "#f0f9ff"
-    },
-    {
-      id: "minimal",
-      name: "Minimal",
-      description: "Simple & elegant",
-      foreground: "#334155",
-      background: "#ffffff"
-    },
-    {
-      id: "colorful",
-      name: "Colorful",
-      description: "Bright & creative",
-      foreground: "#be123c",
-      background: "#fff1f2"
-    },
-    {
-      id: "professional",
-      name: "Professional",
-      description: "Premium dark style",
-      foreground: "#ffffff",
-      background: "#071426"
-    }
-  ];
+    <title>QR Code Customizer — QRNAVI</title>
 
-  let state = {
-    ...DEFAULTS
-  };
+    <link
+        rel="preconnect"
+        href="https://fonts.googleapis.com"
+    >
 
-  let appliedState = {
-    ...DEFAULTS
-  };
+    <link
+        rel="preconnect"
+        href="https://fonts.gstatic.com"
+        crossorigin
+    >
 
-  let initialized = false;
-  let observer = null;
-  let customizerElement = null;
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet"
+    >
 
-  /*
-   * ------------------------------------------------------------
-   * Initialization
-   * ------------------------------------------------------------
-   */
+    <link
+        rel="stylesheet"
+        href="style.css"
+    >
 
-  function init() {
-    if (initialized) {
-      return;
-    }
-
-    const output = getOutputElement();
-
-    if (!output) {
-      return;
-    }
-
-    /*
-     * The customizer is intentionally created only after the
-     * generator has produced a QR code.
-     */
-    if (!hasQRCode(output)) {
-      watchForQRCode(output);
-      return;
-    }
-
-    createCustomizer(output);
-  }
-
-  function watchForQRCode(output) {
-    if (observer) {
-      return;
-    }
-
-    observer = new MutationObserver(function () {
-      if (hasQRCode(output)) {
-        observer.disconnect();
-        observer = null;
-        createCustomizer(output);
-      }
-    });
-
-    observer.observe(output, {
-      childList: true,
-      subtree: true
-    });
-
-    /*
-     * Safety fallback for cases where the QR library updates
-     * the DOM in a way MutationObserver does not immediately
-     * expose.
-     */
-    let attempts = 0;
-
-    const interval = window.setInterval(function () {
-      attempts += 1;
-
-      if (hasQRCode(output)) {
-        window.clearInterval(interval);
-
-        if (observer) {
-          observer.disconnect();
-          observer = null;
+    <!--
+        Customizer-specific layout.
+        This page intentionally uses a desktop-width workspace.
+        It does NOT switch into a mobile editor.
+    -->
+    <style>
+        html,
+        body {
+            min-width: 1200px;
+            overflow-x: auto !important;
         }
 
-        createCustomizer(output);
-      }
+        body.qrnavi-customizer-page {
+            background: #f7f9fc;
+        }
 
-      if (attempts >= 40) {
-        window.clearInterval(interval);
-      }
-    }, 250);
-  }
+        .customizer-page-shell {
+            width: 1200px;
+            min-width: 1200px;
+            margin: 0 auto;
+        }
 
-  /*
-   * ------------------------------------------------------------
-   * DOM helpers
-   * ------------------------------------------------------------
-   */
+        .customizer-header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            width: 100%;
+            background: rgba(7, 20, 38, 0.98);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(12px);
+        }
 
-  function getOutputElement() {
-    return document.getElementById("qr-output");
-  }
+        .customizer-header-inner {
+            width: 1120px;
+            min-width: 1120px;
+            height: 72px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+        }
 
-  function hasQRCode(output) {
-    if (!output) {
-      return false;
-    }
+        .customizer-brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            color: #ffffff;
+            text-decoration: none;
+            font-size: 1.25rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+        }
 
-    return Boolean(
-      output.querySelector("canvas") ||
-      output.querySelector("img")
-    );
-  }
+        .customizer-brand-mark {
+            width: 34px;
+            height: 34px;
+            border-radius: 9px;
+            display: grid;
+            place-items: center;
+            background: #2589f4;
+            color: #ffffff;
+            font-size: 0.95rem;
+            font-weight: 800;
+        }
 
-  /*
-   * ------------------------------------------------------------
-   * Create Premium Editor
-   * ------------------------------------------------------------
-   */
+        .customizer-header-title {
+            margin: 0;
+            color: #ffffff;
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
 
-  function createCustomizer(output) {
-    if (initialized || document.getElementById(CUSTOMIZER_ID)) {
-      initialized = true;
-      return;
-    }
+        .customizer-back-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 42px;
+            padding: 0 18px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 9px;
+            color: #ffffff;
+            background: transparent;
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition:
+                background-color 0.2s ease,
+                border-color 0.2s ease;
+        }
 
-    const parent = output.parentElement;
+        .customizer-back-button:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
 
-    if (!parent) {
-      return;
-    }
+        .customizer-main {
+            width: 1120px;
+            min-width: 1120px;
+            margin: 0 auto;
+            padding: 38px 0 60px;
+        }
 
-    customizerElement = document.createElement("section");
-    customizerElement.id = CUSTOMIZER_ID;
-    customizerElement.className = "qrnavi-customizer";
-    customizerElement.setAttribute(
-      "aria-labelledby",
-      "qrnavi-customizer-title"
-    );
+        .customizer-intro {
+            margin-bottom: 24px;
+        }
 
-    customizerElement.innerHTML = buildCustomizerHTML();
+        .customizer-intro h1 {
+            margin: 0 0 8px;
+            color: #111827;
+            font-size: 2rem;
+            line-height: 1.2;
+            letter-spacing: -0.03em;
+        }
 
-    injectCustomizerStyles();
+        .customizer-intro p {
+            max-width: 720px;
+            margin: 0;
+            color: #667085;
+            font-size: 0.98rem;
+            line-height: 1.65;
+        }
 
-    parent.insertAdjacentElement(
-      "afterend",
-      customizerElement
-    );
+        .customizer-workspace {
+            display: grid;
+            grid-template-columns: 650px 430px;
+            gap: 24px;
+            align-items: start;
+        }
 
-    bindEvents();
+        .customizer-controls,
+        .customizer-preview-panel {
+            background: #ffffff;
+            border: 1px solid #e4e7ec;
+            border-radius: 18px;
+            box-shadow: 0 12px 35px rgba(16, 24, 40, 0.07);
+        }
 
-    updateUI();
+        .customizer-controls {
+            padding: 26px;
+        }
 
-    initialized = true;
-  }
+        .customizer-preview-panel {
+            position: sticky;
+            top: 96px;
+            padding: 26px;
+        }
 
-  function buildCustomizerHTML() {
-    return `
-      <div class="qrnavi-customizer-shell">
+        .customizer-section {
+            padding: 0 0 25px;
+            margin: 0 0 25px;
+            border-bottom: 1px solid #eaecf0;
+        }
 
-        <div class="qrnavi-customizer-header">
-          <div>
-            <span class="qrnavi-editor-eyebrow">
-              QR EDITOR
-            </span>
+        .customizer-section:last-child {
+            padding-bottom: 0;
+            margin-bottom: 0;
+            border-bottom: 0;
+        }
 
-            <h2 id="qrnavi-customizer-title">
-              Customize your QR
-            </h2>
+        .customizer-section-heading {
+            margin-bottom: 15px;
+        }
 
-            <p>
-              Create a polished QR code while keeping your
-              original information unchanged.
-            </p>
-          </div>
+        .customizer-section-heading h2 {
+            margin: 0 0 5px;
+            color: #111827;
+            font-size: 1.02rem;
+            line-height: 1.4;
+            font-weight: 700;
+        }
 
-          <div class="qrnavi-editor-status">
-            <span class="qrnavi-status-dot"></span>
-            <span>Live Preview</span>
-          </div>
-        </div>
+        .customizer-section-heading p {
+            margin: 0;
+            color: #667085;
+            font-size: 0.84rem;
+            line-height: 1.55;
+        }
 
+        .template-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+        }
 
-        <!-- ==================================================
-             Templates
-             ================================================== -->
+        .template-card {
+            min-height: 76px;
+            padding: 12px;
+            border: 1px solid #d0d5dd;
+            border-radius: 12px;
+            background: #ffffff;
+            color: #344054;
+            cursor: pointer;
+            text-align: left;
+            transition:
+                border-color 0.2s ease,
+                box-shadow 0.2s ease,
+                background-color 0.2s ease;
+        }
 
-        <div class="qrnavi-editor-section">
-          <div class="qrnavi-section-title-row">
-            <div>
-              <h3>Choose a style</h3>
-              <p>Start with a professionally balanced preset.</p>
+        .template-card:hover {
+            border-color: #2589f4;
+            box-shadow: 0 4px 12px rgba(37, 137, 244, 0.1);
+        }
+
+        .template-card.is-active {
+            border-color: #2589f4;
+            background: #f0f7ff;
+            box-shadow: 0 0 0 2px rgba(37, 137, 244, 0.12);
+        }
+
+        .template-card-name {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.84rem;
+            font-weight: 700;
+        }
+
+        .template-card-description {
+            display: block;
+            color: #667085;
+            font-size: 0.72rem;
+            line-height: 1.4;
+        }
+
+        .color-control-row {
+            display: grid;
+            grid-template-columns: 54px 1fr;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .color-picker {
+            width: 54px;
+            height: 46px;
+            padding: 3px;
+            border: 1px solid #d0d5dd;
+            border-radius: 9px;
+            background: #ffffff;
+            cursor: pointer;
+        }
+
+        .hex-input-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .hex-prefix {
+            color: #667085;
+            font-weight: 600;
+        }
+
+        .hex-input {
+            width: 100%;
+            height: 46px;
+            padding: 0 13px;
+            border: 1px solid #d0d5dd;
+            border-radius: 9px;
+            outline: none;
+            color: #111827;
+            background: #ffffff;
+            font: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .hex-input:focus {
+            border-color: #2589f4;
+            box-shadow: 0 0 0 3px rgba(37, 137, 244, 0.12);
+        }
+
+        .preset-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 9px;
+            margin-top: 13px;
+        }
+
+        .preset-color {
+            height: 38px;
+            border: 2px solid #ffffff;
+            outline: 1px solid #d0d5dd;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .preset-color:focus-visible {
+            outline: 3px solid rgba(37, 137, 244, 0.35);
+        }
+
+        .size-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+        }
+
+        .size-option {
+            min-height: 48px;
+            border: 1px solid #d0d5dd;
+            border-radius: 9px;
+            background: #ffffff;
+            color: #344054;
+            cursor: pointer;
+            font: inherit;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .size-option:hover {
+            border-color: #2589f4;
+        }
+
+        .size-option.is-active {
+            border-color: #2589f4;
+            background: #f0f7ff;
+            color: #1478df;
+            box-shadow: 0 0 0 2px rgba(37, 137, 244, 0.1);
+        }
+
+        .contrast-box {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 14px 16px;
+            border: 1px solid #e4e7ec;
+            border-radius: 11px;
+            background: #f9fafb;
+        }
+
+        .contrast-label {
+            color: #344054;
+            font-size: 0.84rem;
+            font-weight: 600;
+        }
+
+        .contrast-status {
+            color: #1478df;
+            font-size: 0.84rem;
+            font-weight: 700;
+        }
+
+        .customizer-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 25px;
+        }
+
+        .customizer-reset-button,
+        .customizer-download-button {
+            min-height: 48px;
+            padding: 0 20px;
+            border-radius: 9px;
+            font: inherit;
+            font-size: 0.88rem;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .customizer-reset-button {
+            border: 1px solid #d0d5dd;
+            background: #ffffff;
+            color: #344054;
+        }
+
+        .customizer-reset-button:hover {
+            background: #f9fafb;
+        }
+
+        .customizer-download-button {
+            flex: 1;
+            border: 1px solid #2589f4;
+            background: #2589f4;
+            color: #ffffff;
+        }
+
+        .customizer-download-button:hover {
+            background: #1478df;
+            border-color: #1478df;
+        }
+
+        .preview-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+            margin-bottom: 18px;
+        }
+
+        .preview-heading h2 {
+            margin: 0;
+            color: #111827;
+            font-size: 1.05rem;
+            font-weight: 700;
+        }
+
+        .live-badge {
+            display: inline-flex;
+            align-items: center;
+            min-height: 28px;
+            padding: 0 9px;
+            border-radius: 999px;
+            background: #eef6ff;
+            color: #1478df;
+            font-size: 0.72rem;
+            font-weight: 700;
+        }
+
+        .customizer-qr-stage {
+            min-height: 490px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 25px;
+            border: 1px solid #eaecf0;
+            border-radius: 14px;
+            background: #f9fafb;
+            overflow: hidden;
+        }
+
+        .customizer-qr-output {
+            width: 320px;
+            min-height: 320px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #ffffff;
+            border-radius: 8px;
+        }
+
+        .customizer-qr-output canvas,
+        .customizer-qr-output img {
+            display: block;
+            max-width: 100%;
+            height: auto;
+        }
+
+        .preview-info {
+            margin-top: 16px;
+            padding: 13px 14px;
+            border-radius: 10px;
+            background: #f9fafb;
+            color: #667085;
+            font-size: 0.8rem;
+            line-height: 1.55;
+            text-align: center;
+        }
+
+        .customizer-empty-state {
+            width: 100%;
+            padding: 55px 30px;
+            text-align: center;
+        }
+
+        .customizer-empty-state h2 {
+            margin: 0 0 9px;
+            color: #111827;
+            font-size: 1.15rem;
+        }
+
+        .customizer-empty-state p {
+            max-width: 380px;
+            margin: 0 auto 20px;
+            color: #667085;
+            font-size: 0.88rem;
+            line-height: 1.6;
+        }
+
+        .customizer-empty-state a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 44px;
+            padding: 0 18px;
+            border-radius: 9px;
+            background: #2589f4;
+            color: #ffffff;
+            text-decoration: none;
+            font-size: 0.86rem;
+            font-weight: 700;
+        }
+
+        .customizer-empty-state a:hover {
+            background: #1478df;
+        }
+
+        .customizer-note {
+            margin-top: 20px;
+            padding: 15px 16px;
+            border: 1px solid #dbeafe;
+            border-radius: 11px;
+            background: #f0f7ff;
+            color: #344054;
+            font-size: 0.8rem;
+            line-height: 1.6;
+        }
+
+        .customizer-note strong {
+            color: #111827;
+        }
+
+        .customizer-error {
+            margin-top: 14px;
+            padding: 12px 14px;
+            border: 1px solid #fecdca;
+            border-radius: 9px;
+            background: #fef3f2;
+            color: #b42318;
+            font-size: 0.82rem;
+            line-height: 1.5;
+        }
+
+        .customizer-footer {
+            width: 1120px;
+            min-width: 1120px;
+            margin: 0 auto;
+            padding: 22px 0 35px;
+            border-top: 1px solid #eaecf0;
+            color: #667085;
+            font-size: 0.78rem;
+            text-align: center;
+        }
+
+        /*
+         * Keep the editor desktop-sized even when the page is opened
+         * from a phone. There is intentionally no mobile editor layout.
+         */
+        @media (max-width: 1199px) {
+            .customizer-page-shell {
+                margin-left: 0;
+                margin-right: 0;
+            }
+
+            .customizer-header-inner,
+            .customizer-main,
+            .customizer-footer {
+                margin-left: 40px;
+                margin-right: 40px;
+            }
+        }
+    </style>
+</head>
+
+<body class="qrnavi-customizer-page">
+
+    <div class="customizer-page-shell">
+
+        <!-- =====================================================
+             HEADER
+             ===================================================== -->
+
+        <header class="customizer-header">
+            <div class="customizer-header-inner">
+
+                <a
+                    class="customizer-brand"
+                    href="index.html"
+                    aria-label="QRNAVI Home"
+                >
+                    <span
+                        class="customizer-brand-mark"
+                        aria-hidden="true"
+                    >
+                        QR
+                    </span>
+
+                    <span>QRNAVI</span>
+                </a>
+
+                <p class="customizer-header-title">
+                    QR Code Customizer
+                </p>
+
+                <a
+                    class="customizer-back-button"
+                    href="index.html"
+                >
+                    ← Back to Generator
+                </a>
+
             </div>
-          </div>
-
-          <div
-            class="qrnavi-template-grid"
-            id="qrnavi-template-grid"
-          >
-            ${TEMPLATES.map(buildTemplateCard).join("")}
-          </div>
-        </div>
+        </header>
 
 
-        <!-- ==================================================
-             Color Controls
-             ================================================== -->
+        <!-- =====================================================
+             MAIN
+             ===================================================== -->
 
-        <div class="qrnavi-editor-section">
+        <main class="customizer-main">
 
-          <div class="qrnavi-section-title-row">
-            <div>
-              <h3>Colors</h3>
-              <p>
-                Use high-contrast colors for reliable scanning.
-              </p>
-            </div>
-          </div>
-
-
-          <div class="qrnavi-color-presets">
-
-            <div class="qrnavi-control-label-row">
-              <span>Quick presets</span>
-            </div>
-
-            <div
-              class="qrnavi-preset-grid"
-              id="qrnavi-preset-grid"
+            <section
+                class="customizer-intro"
+                aria-labelledby="customizer-page-title"
             >
-              ${COLOR_PRESETS.map(buildPresetButton).join("")}
-            </div>
+                <h1 id="customizer-page-title">
+                    Customize Your QR Code
+                </h1>
 
-          </div>
+                <p>
+                    Personalize your QR code with professional templates,
+                    colors, background colors and sizes. Every change
+                    updates the QR preview instantly.
+                </p>
+            </section>
 
 
-          <div class="qrnavi-color-editor-grid">
+            <!-- =================================================
+                 WORKSPACE
+                 ================================================= -->
 
-            <div class="qrnavi-color-card">
+            <div class="customizer-workspace">
 
-              <div class="qrnavi-color-card-heading">
-                <span class="qrnavi-color-swatch qrnavi-foreground-swatch"></span>
+                <!-- =============================================
+                     LEFT: CONTROLS
+                     ============================================= -->
 
-                <div>
-                  <strong>QR color</strong>
-                  <small>Foreground</small>
-                </div>
-              </div>
-
-              <div class="qrnavi-color-input-row">
-
-                <input
-                  type="color"
-                  id="qrnavi-foreground-picker"
-                  aria-label="QR foreground color"
-                  value="${DEFAULTS.foreground}"
+                <section
+                    class="customizer-controls"
+                    aria-label="QR customization controls"
                 >
 
-                <input
-                  type="text"
-                  id="qrnavi-foreground-hex"
-                  class="qrnavi-hex-input"
-                  value="${DEFAULTS.foreground}"
-                  maxlength="7"
-                  inputmode="text"
-                  autocomplete="off"
-                  spellcheck="false"
-                  aria-label="QR foreground HEX color"
+                    <!-- Templates -->
+
+                    <div class="customizer-section">
+
+                        <div class="customizer-section-heading">
+                            <h2>Templates</h2>
+
+                            <p>
+                                Choose a ready-made professional style.
+                                Changes apply instantly.
+                            </p>
+                        </div>
+
+                        <div
+                            class="template-grid"
+                            id="template-grid"
+                        >
+
+                            <button
+                                type="button"
+                                class="template-card is-active"
+                                data-template="classic"
+                                aria-pressed="true"
+                            >
+                                <span class="template-card-name">
+                                    Classic
+                                </span>
+
+                                <span class="template-card-description">
+                                    Clean default QR
+                                </span>
+                            </button>
+
+
+                            <button
+                                type="button"
+                                class="template-card"
+                                data-template="business"
+                                aria-pressed="false"
+                            >
+                                <span class="template-card-name">
+                                    Business
+                                </span>
+
+                                <span class="template-card-description">
+                                    Professional look
+                                </span>
+                            </button>
+
+
+                            <button
+                                type="button"
+                                class="template-card"
+                                data-template="social"
+                                aria-pressed="false"
+                            >
+                                <span class="template-card-name">
+                                    Social
+                                </span>
+
+                                <span class="template-card-description">
+                                    Modern social style
+                                </span>
+                            </button>
+
+
+                            <button
+                                type="button"
+                                class="template-card"
+                                data-template="modern"
+                                aria-pressed="false"
+                            >
+                                <span class="template-card-name">
+                                    Modern
+                                </span>
+
+                                <span class="template-card-description">
+                                    Fresh modern look
+                                </span>
+                            </button>
+
+
+                            <button
+                                type="button"
+                                class="template-card"
+                                data-template="minimal"
+                                aria-pressed="false"
+                            >
+                                <span class="template-card-name">
+                                    Minimal
+                                </span>
+
+                                <span class="template-card-description">
+                                    Simple appearance
+                                </span>
+                            </button>
+
+
+                            <button
+                                type="button"
+                                class="template-card"
+                                data-template="colorful"
+                                aria-pressed="false"
+                            >
+                                <span class="template-card-name">
+                                    Colorful
+                                </span>
+
+                                <span class="template-card-description">
+                                    Vibrant colors
+                                </span>
+                            </button>
+
+
+                            <button
+                                type="button"
+                                class="template-card"
+                                data-template="professional"
+                                aria-pressed="false"
+                            >
+                                <span class="template-card-name">
+                                    Professional
+                                </span>
+
+                                <span class="template-card-description">
+                                    Business-focused
+                                </span>
+                            </button>
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- QR Color -->
+
+                    <div class="customizer-section">
+
+                        <div class="customizer-section-heading">
+                            <h2>QR Color</h2>
+
+                            <p>
+                                Select any color or enter a HEX value.
+                            </p>
+                        </div>
+
+                        <div class="color-control-row">
+
+                            <input
+                                type="color"
+                                id="qr-color-picker"
+                                class="color-picker"
+                                value="#071426"
+                                aria-label="QR code color"
+                            >
+
+                            <div class="hex-input-wrapper">
+
+                                <span
+                                    class="hex-prefix"
+                                    aria-hidden="true"
+                                >
+                                    #
+                                </span>
+
+                                <input
+                                    type="text"
+                                    id="qr-color-hex"
+                                    class="hex-input"
+                                    value="071426"
+                                    maxlength="6"
+                                    inputmode="text"
+                                    autocomplete="off"
+                                    spellcheck="false"
+                                    aria-label="QR code HEX color"
+                                >
+
+                            </div>
+
+                        </div>
+
+
+                        <div
+                            class="preset-grid"
+                            id="qr-color-presets"
+                            aria-label="QR color presets"
+                        >
+
+                            <button
+                                type="button"
+                                class="preset-color"
+                                data-color="#071426"
+                                style="background:#071426"
+                                aria-label="Navy"
+                                title="Navy"
+                            ></button>
+
+                            <button
+                                type="button"
+                                class="preset-color"
+                                data-color="#2589F4"
+                                style="background:#2589F4"
+                                aria-label="Blue"
+                                title="Blue"
+                            ></button>
+
+                            <button
+                                type="button"
+                                class="preset-color"
+                                data-color="#1478DF"
+                                style="background:#1478DF"
+                                aria-label="Deep Blue"
+                                title="Deep Blue"
+                            ></button>
+
+                            <button
+                                type="button"
+                                class="preset-color"
+                                data-color="#111827"
+                                style="background:#111827"
+                                aria-label="Black"
+                                title="Black"
+                            ></button>
+
+                            <button
+                                type="button"
+                                class="preset-color"
+                                data-color="#166534"
+                                style="background:#166534"
+                                aria-label="Green"
+                                title="Green"
+                            ></button>
+
+                            <button
+                                type="button"
+                                class="preset-color"
+                                data-color="#7C3AED"
+                                style="background:#7C3AED"
+                                aria-label="Purple"
+                                title="Purple"
+                            ></button>
+
+                            <button
+                                type="button"
+                                class="preset-color"
+                                data-color="#BE123C"
+                                style="background:#BE123C"
+                                aria-label="Berry"
+                                title="Berry"
+                            ></button>
+
+                            <button
+                                type="button"
+                                class="preset-color"
+                                data-color="#475467"
+                                style="background:#475467"
+                                aria-label="Slate"
+                                title="Slate"
+                            ></button>
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- Background Color -->
+
+                    <div class="customizer-section">
+
+                        <div class="customizer-section-heading">
+                            <h2>Background Color</h2>
+
+                            <p>
+                                Choose the background behind the QR code.
+                            </p>
+                        </div>
+
+                        <div class="color-control-row">
+
+                            <input
+                                type="color"
+                                id="background-color-picker"
+                                class="color-picker"
+                                value="#FFFFFF"
+                                aria-label="QR background color"
+                            >
+
+                            <div class="hex-input-wrapper">
+
+                                <span
+                                    class="hex-prefix"
+                                    aria-hidden="true"
+                                >
+                                    #
+                                </span>
+
+                                <input
+                                    type="text"
+                                    id="background-color-hex"
+                                    class="hex-input"
+                                    value="FFFFFF"
+                                    maxlength="6"
+                                    inputmode="text"
+                                    autocomplete="off"
+                                    spellcheck="false"
+                                    aria-label="QR background HEX color"
+                                >
+
+                            </div>
+
+                        </div>
+
+
+                        <div
+                            class="preset-grid"
+                            id="background-color-presets"
+                            aria-label="Background color presets"
+                        >
+
+                            <button
+                                type="button"
+                                class="preset-color"
+                                data-color="#FFFFFF"
+                                style="background:#FFFFFF"
+                                aria-label="White"
+                                title="White"
+                            ></button>
+
+                            <button
+                                type="button"
+                                class="preset-color"
+                                data-color="#F7F9FC"
+                                style="background:#F7F9FC"
+                                aria-label="Light Gray"
+                                title="Light Gray"
+                            ></button>
+
+                            <button
+                                type="button"
+                                class="preset-color"
+                                data-color="#EFF6FF"
+                                style="background:#EFF6FF"
+                                aria-label="Light Blue"
+                                title="Light Blue"
+                            ></button>
+
+                            <button
+                                type="button"
+                                class="preset-color"
+                                data-color="#F0FDF4"
+                                style="background:#F0FDF4"
+                                aria-label="Light Green"
+                                title="Light Green"
+                            ></button>
+
+                            <button
+                                type="button"
+                                class="preset-color"
+                                data-color="#F5F3FF"
+                                style="background:#F5F3FF"
+                                aria-label="Light Purple"
+                                title="Light Purple"
+                            ></button>
+
+                            <button
+                                type="button"
+                                class="preset-color"
+                                data-color="#FFF7ED"
+                                style="background:#FFF7ED"
+                                aria-label="Light Orange"
+                                title="Light Orange"
+                            ></button>
+
+                            <button
+                                type="button"
+                                class="preset-color"
+                                data-color="#FDF2F8"
+                                style="background:#FDF2F8"
+                                aria-label="Light Pink"
+                                title="Light Pink"
+                            ></button>
+
+                            <button
+                                type="button"
+                                class="preset-color"
+                                data-color="#F2F4F7"
+                                style="background:#F2F4F7"
+                                aria-label="Soft Gray"
+                                title="Soft Gray"
+                            ></button>
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- Size -->
+
+                    <div class="customizer-section">
+
+                        <div class="customizer-section-heading">
+                            <h2>QR Size</h2>
+
+                            <p>
+                                Select the output size for your QR code.
+                            </p>
+                        </div>
+
+                        <div
+                            class="size-grid"
+                            id="size-options"
+                        >
+
+                            <button
+                                type="button"
+                                class="size-option"
+                                data-size="220"
+                                aria-pressed="false"
+                            >
+                                220 × 220
+                            </button>
+
+                            <button
+                                type="button"
+                                class="size-option is-active"
+                                data-size="320"
+                                aria-pressed="true"
+                            >
+                                320 × 320
+                            </button>
+
+                            <button
+                                type="button"
+                                class="size-option"
+                                data-size="400"
+                                aria-pressed="false"
+                            >
+                                400 × 400
+                            </button>
+
+                            <button
+                                type="button"
+                                class="size-option"
+                                data-size="512"
+                                aria-pressed="false"
+                            >
+                                512 × 512
+                            </button>
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- Readability -->
+
+                    <div class="customizer-section">
+
+                        <div class="customizer-section-heading">
+                            <h2>QR Readability</h2>
+
+                            <p>
+                                Contrast is checked automatically to help
+                                maintain reliable QR scanning.
+                            </p>
+                        </div>
+
+                        <div
+                            class="contrast-box"
+                            id="contrast-feedback"
+                            aria-live="polite"
+                        >
+
+                            <span class="contrast-label">
+                                Contrast
+                            </span>
+
+                            <span
+                                class="contrast-status"
+                                id="contrast-status"
+                            >
+                                Excellent
+                            </span>
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- Actions -->
+
+                    <div class="customizer-actions">
+
+                        <button
+                            type="button"
+                            id="reset-customization"
+                            class="customizer-reset-button"
+                        >
+                            Reset
+                        </button>
+
+                        <button
+                            type="button"
+                            id="customizer-download"
+                            class="customizer-download-button"
+                        >
+                            Download PNG
+                        </button>
+
+                    </div>
+
+
+                    <!-- Important Note -->
+
+                    <div class="customizer-note">
+                        <strong>Important:</strong>
+                        Customization changes only the appearance of your
+                        QR code. The original QR data remains unchanged.
+                        All customization changes are applied to the live
+                        preview automatically.
+                    </div>
+
+
+                    <!-- Error Area -->
+
+                    <div
+                        id="customizer-error"
+                        class="customizer-error"
+                        role="alert"
+                        hidden
+                    ></div>
+
+                </section>
+
+
+                <!-- =============================================
+                     RIGHT: LIVE PREVIEW
+                     ============================================= -->
+
+                <aside
+                    class="customizer-preview-panel"
+                    aria-label="Live QR code preview"
                 >
 
-              </div>
+                    <div class="preview-heading">
+
+                        <h2>
+                            Live Preview
+                        </h2>
+
+                        <span class="live-badge">
+                            LIVE
+                        </span>
+
+                    </div>
+
+
+                    <div
+                        class="customizer-qr-stage"
+                        id="customizer-qr-stage"
+                    >
+
+                        <div
+                            id="customizer-qr-output"
+                            class="customizer-qr-output"
+                            aria-live="polite"
+                            aria-label="Customized QR code preview"
+                        >
+                        </div>
+
+
+                        <!--
+                            Empty state is controlled by qr-customizer.js.
+                            It is hidden once valid QR data is loaded.
+                        -->
+
+                        <div
+                            id="customizer-empty-state"
+                            class="customizer-empty-state"
+                            hidden
+                        >
+
+                            <h2>
+                                No QR Code Selected
+                            </h2>
+
+                            <p>
+                                Generate a QR code first, then open
+                                Customize to edit its appearance.
+                            </p>
+
+                            <a href="index.html">
+                                Back to QR Generator
+                            </a>
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="preview-info">
+                        Your QR preview updates automatically whenever
+                        you change a template, color, background or size.
+                    </div>
+
+                </aside>
 
             </div>
 
+        </main>
 
-            <div class="qrnavi-color-card">
 
-              <div class="qrnavi-color-card-heading">
-                <span class="qrnavi-color-swatch qrnavi-background-swatch"></span>
+        <!-- =====================================================
+             FOOTER
+             ===================================================== -->
 
-                <div>
-                  <strong>Background</strong>
-                  <small>QR background</small>
-                </div>
-              </div>
+        <footer class="customizer-footer">
+            © <span id="customizer-year">2026</span> QRNAVI.
+            Professional QR code tools.
+        </footer>
 
-              <div class="qrnavi-color-input-row">
+    </div>
 
-                <input
-                  type="color"
-                  id="qrnavi-background-picker"
-                  aria-label="QR background color"
-                  value="${DEFAULTS.background}"
-                >
 
-                <input
-                  type="text"
-                  id="qrnavi-background-hex"
-                  class="qrnavi-hex-input"
-                  value="${DEFAULTS.background}"
-                  maxlength="7"
-                  inputmode="text"
-                  autocomplete="off"
-                  spellcheck="false"
-                  aria-label="QR background HEX color"
-                >
+    <!-- =========================================================
+         QR CUSTOMIZER JAVASCRIPT
+         =========================================================
+         This is the next file we will create.
+    -->
 
-              </div>
+    <script
+        src="qr-customizer.js"
+        defer
+    ></script>
 
-            </div>
 
-          </div>
+    <!-- =========================================================
+         YEAR
+         ========================================================= -->
 
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const yearElement =
+                document.getElementById("customizer-year");
 
-          <div
-            class="qrnavi-contrast-box"
-            id="qrnavi-contrast-box"
-            role="status"
-            aria-live="polite"
-          >
-            <span class="qrnavi-contrast-icon">✓</span>
+            if (yearElement) {
+                yearElement.textContent =
+                    new Date().getFullYear();
+            }
+        });
+    </script>
 
-            <div>
-              <strong id="qrnavi-contrast-title">
-                Good contrast
-              </strong>
-
-              <p id="qrnavi-contrast-message">
-                These colors should provide good QR readability.
-              </p>
-            </div>
-          </div>
-
-        </div>
-
-
-        <!-- ==================================================
-             Size
-             ================================================== -->
-
-        <div class="qrnavi-editor-section">
-
-          <div class="qrnavi-section-title-row">
-            <div>
-              <h3>QR size</h3>
-              <p>
-                Select the size that fits your use case.
-              </p>
-            </div>
-
-            <span
-              class="qrnavi-size-value"
-              id="qrnavi-size-value"
-            >
-              320 × 320
-            </span>
-          </div>
-
-
-          <div
-            class="qrnavi-size-grid"
-            id="qrnavi-size-grid"
-          >
-            ${SIZE_OPTIONS.map(buildSizeOption).join("")}
-          </div>
-
-        </div>
-
-
-        <!-- ==================================================
-             Reliability
-             ================================================== -->
-
-        <div class="qrnavi-editor-section qrnavi-reliability-section">
-
-          <div class="qrnavi-reliability-card">
-
-            <div class="qrnavi-reliability-icon">
-              ✓
-            </div>
-
-            <div>
-              <strong>Scanning reliability comes first</strong>
-
-              <p>
-                QRNAVI keeps your QR data unchanged and checks
-                color contrast before applying your design.
-              </p>
-            </div>
-
-          </div>
-
-        </div>
-
-
-        <!-- ==================================================
-             Actions
-             ================================================== -->
-
-        <div class="qrnavi-editor-actions">
-
-          <button
-            type="button"
-            class="qrnavi-reset-button"
-            id="qrnavi-reset-button"
-          >
-            Reset
-          </button>
-
-          <button
-            type="button"
-            class="qrnavi-apply-button"
-            id="qrnavi-apply-button"
-          >
-            <span>Apply customization</span>
-            <span class="qrnavi-apply-arrow">→</span>
-          </button>
-
-        </div>
-
-
-        <div
-          class="qrnavi-editor-note"
-          id="qrnavi-editor-note"
-        >
-          Your QR information stays exactly the same.
-        </div>
-
-      </div>
-    `;
-  }
-
-  function buildTemplateCard(template) {
-    const isActive = template.id === DEFAULTS.template;
-
-    return `
-      <button
-        type="button"
-        class="qrnavi-template-card${isActive ? " is-active" : ""}"
-        data-template="${escapeAttribute(template.id)}"
-        aria-pressed="${isActive ? "true" : "false"}"
-      >
-
-        <span
-          class="qrnavi-template-preview"
-          style="
-            --template-fg:${template.foreground};
-            --template-bg:${template.background};
-          "
-        >
-          <span class="qrnavi-mini-qr">
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
-            <i></i>
-          </span>
-        </span>
-
-        <span class="qrnavi-template-info">
-          <strong>${escapeHTML(template.name)}</strong>
-          <small>${escapeHTML(template.description)}</small>
-        </span>
-
-        <span class="qrnavi-template-check">✓</span>
-
-      </button>
-    `;
-  }
-
-  function buildPresetButton(preset) {
-    return `
-      <button
-        type="button"
-        class="qrnavi-preset-button"
-        data-preset="${escapeAttribute(preset.name)}"
-        title="${escapeAttribute(preset.name)}"
-        aria-label="${escapeAttribute(preset.name)} color preset"
-      >
-        <span
-          class="qrnavi-preset-preview"
-          style="
-            --preset-fg:${preset.foreground};
-            --preset-bg:${preset.background};
-          "
-        ></span>
-
-        <span>${escapeHTML(preset.name)}</span>
-      </button>
-    `;
-  }
-
-  function buildSizeOption(option) {
-    const active = option.value === DEFAULTS.size;
-
-    return `
-      <button
-        type="button"
-        class="qrnavi-size-option${active ? " is-active" : ""}"
-        data-size="${option.value}"
-        aria-pressed="${active ? "true" : "false"}"
-      >
-        <strong>${escapeHTML(option.label)}</strong>
-        <span>${escapeHTML(option.description)}</span>
-        <small>${option.value}px</small>
-      </button>
-    `;
-  }
-
-  /*
-   * ------------------------------------------------------------
-   * Event binding
-   * ------------------------------------------------------------
-   */
-
-  function bindEvents() {
-    if (!customizerElement) {
-      return;
-    }
-
-    const templateGrid =
-      customizerElement.querySelector("#qrnavi-template-grid");
-
-    const presetGrid =
-      customizerElement.querySelector("#qrnavi-preset-grid");
-
-    const sizeGrid =
-      customizerElement.querySelector("#qrnavi-size-grid");
-
-    const foregroundPicker =
-      customizerElement.querySelector("#qrnavi-foreground-picker");
-
-    const backgroundPicker =
-      customizerElement.querySelector("#qrnavi-background-picker");
-
-    const foregroundHex =
-      customizerElement.querySelector("#qrnavi-foreground-hex");
-
-    const backgroundHex =
-      customizerElement.querySelector("#qrnavi-background-hex");
-
-    const resetButton =
-      customizerElement.querySelector("#qrnavi-reset-button");
-
-    const applyButton =
-      customizerElement.querySelector("#qrnavi-apply-button");
-
-
-    if (templateGrid) {
-      templateGrid.addEventListener("click", function (event) {
-        const button = event.target.closest(
-          "[data-template]"
-        );
-
-        if (!button) {
-          return;
-        }
-
-        const templateId =
-          button.getAttribute("data-template");
-
-        applyTemplate(templateId);
-      });
-    }
-
-
-    if (presetGrid) {
-      presetGrid.addEventListener("click", function (event) {
-        const button = event.target.closest(
-          "[data-preset]"
-        );
-
-        if (!button) {
-          return;
-        }
-
-        const presetName =
-          button.getAttribute("data-preset");
-
-        applyPreset(presetName);
-      });
-    }
-
-
-    if (sizeGrid) {
-      sizeGrid.addEventListener("click", function (event) {
-        const button = event.target.closest(
-          "[data-size]"
-        );
-
-        if (!button) {
-          return;
-        }
-
-        const size = Number(
-          button.getAttribute("data-size")
-        );
-
-        if (!Number.isFinite(size)) {
-          return;
-        }
-
-        state.size = size;
-
-        renderPreview();
-        updateUI();
-      });
-    }
-
-
-    if (foregroundPicker) {
-      foregroundPicker.addEventListener(
-        "input",
-        function (event) {
-          const color = normalizeHex(
-            event.target.value
-          );
-
-          if (!color) {
-            return;
-          }
-
-          state.foreground = color;
-          state.template = "custom";
-
-          renderPreview();
-          updateUI();
-        }
-      );
-    }
-
-
-    if (backgroundPicker) {
-      backgroundPicker.addEventListener(
-        "input",
-        function (event) {
-          const color = normalizeHex(
-            event.target.value
-          );
-
-          if (!color) {
-            return;
-          }
-
-          state.background = color;
-          state.template = "custom";
-
-          renderPreview();
-          updateUI();
-        }
-      );
-    }
-
-
-    if (foregroundHex) {
-      foregroundHex.addEventListener(
-        "input",
-        function (event) {
-          const value = event.target.value.trim();
-
-          if (!isValidHex(value)) {
-            markInvalidInput(foregroundHex, true);
-            return;
-          }
-
-          markInvalidInput(foregroundHex, false);
-
-          state.foreground =
-            value.toUpperCase();
-
-          state.template = "custom";
-
-          syncColorPicker(
-            "foreground",
-            state.foreground
-          );
-
-          renderPreview();
-          updateUI();
-        }
-      );
-
-      foregroundHex.addEventListener(
-        "blur",
-        function () {
-          const value = normalizeHex(
-            foregroundHex.value
-          );
-
-          if (!value) {
-            foregroundHex.value = state.foreground;
-            markInvalidInput(foregroundHex, false);
-            return;
-          }
-
-          state.foreground = value;
-
-          foregroundHex.value =
-            value.toUpperCase();
-
-          markInvalidInput(foregroundHex, false);
-
-          syncColorPicker(
-            "foreground",
-            state.foreground
-          );
-
-          renderPreview();
-          updateUI();
-        }
-      );
-    }
-
-
-    if (backgroundHex) {
-      backgroundHex.addEventListener(
-        "input",
-        function (event) {
-          const value = event.target.value.trim();
-
-          if (!isValidHex(value)) {
-            markInvalidInput(backgroundHex, true);
-            return;
-          }
-
-          markInvalidInput(backgroundHex, false);
-
-          state.background =
-            value.toUpperCase();
-
-          state.template = "custom";
-
-          syncColorPicker(
-            "background",
-            state.background
-          );
-
-          renderPreview();
-          updateUI();
-        }
-      );
-
-      backgroundHex.addEventListener(
-        "blur",
-        function () {
-          const value = normalizeHex(
-            backgroundHex.value
-          );
-
-          if (!value) {
-            backgroundHex.value = state.background;
-            markInvalidInput(backgroundHex, false);
-            return;
-          }
-
-          state.background = value;
-
-          backgroundHex.value =
-            value.toUpperCase();
-
-          markInvalidInput(backgroundHex, false);
-
-          syncColorPicker(
-            "background",
-            state.background
-          );
-
-          renderPreview();
-          updateUI();
-        }
-      );
-    }
-
-
-    if (resetButton) {
-      resetButton.addEventListener(
-        "click",
-        resetCustomizer
-      );
-    }
-
-
-    if (applyButton) {
-      applyButton.addEventListener(
-        "click",
-        applyCustomization
-      );
-    }
-  }
-
-  /*
-   * ------------------------------------------------------------
-   * Templates
-   * ------------------------------------------------------------
-   */
-
-  function applyTemplate(templateId) {
-    const template = TEMPLATES.find(function (item) {
-      return item.id === templateId;
-    });
-
-    if (!template) {
-      return;
-    }
-
-    state.template = template.id;
-    state.foreground = template.foreground;
-    state.background = template.background;
-
-    renderPreview();
-    updateUI();
-  }
-
-  function applyPreset(presetName) {
-    const preset = COLOR_PRESETS.find(function (item) {
-      return item.name === presetName;
-    });
-
-    if (!preset) {
-      return;
-    }
-
-    state.template = "custom";
-    state.foreground = preset.foreground;
-    state.background = preset.background;
-
-    renderPreview();
-    updateUI();
-  }
-
-  /*
-   * ------------------------------------------------------------
-   * QR Rendering
-   * ------------------------------------------------------------
-   */
-
-  function renderPreview() {
-    const output = getOutputElement();
-
-    if (!output) {
-      return;
-    }
-
-    const payload =
-      getCurrentPayload();
-
-    if (!payload) {
-      return;
-    }
-
-    /*
-     * qrcodejs is loaded by script.js before the first QR is
-     * created. We only render here when the global constructor
-     * is available.
-     */
-    if (typeof window.QRCode !== "function") {
-      showEditorMessage(
-        "QR engine is still loading. Please try again."
-      );
-
-      return;
-    }
-
-    try {
-      output.innerHTML = "";
-
-      const qr = document.createElement("div");
-
-      qr.className = "qrnavi-live-qr";
-
-      output.appendChild(qr);
-
-      new window.QRCode(qr, {
-        text: payload,
-        width: state.size,
-        height: state.size,
-        colorDark: state.foreground,
-        colorLight: state.background,
-        correctLevel:
-          window.QRCode.CorrectLevel.M
-      });
-
-      /*
-       * qrcodejs may produce either canvas or image depending
-       * on browser support. We style both consistently.
-       */
-      requestAnimationFrame(function () {
-        const canvas = qr.querySelector("canvas");
-        const image = qr.querySelector("img");
-
-        if (canvas) {
-          canvas.style.display = "block";
-          canvas.style.width = state.size + "px";
-          canvas.style.height = state.size + "px";
-          canvas.style.maxWidth = "100%";
-          canvas.style.height = "auto";
-        }
-
-        if (image) {
-          image.style.display = "block";
-          image.style.width = state.size + "px";
-          image.style.height = state.size + "px";
-          image.style.maxWidth = "100%";
-          image.style.height = "auto";
-        }
-      });
-
-      clearEditorMessage();
-
-    } catch (error) {
-      console.error(
-        "QRNAVI customizer rendering error:",
-        error
-      );
-
-      showEditorMessage(
-        "The QR preview could not be updated. Your original QR data is unchanged."
-      );
-    }
-  }
-
-  /*
-   * ------------------------------------------------------------
-   * State / UI
-   * ------------------------------------------------------------
-   */
-
-  function updateUI() {
-    if (!customizerElement) {
-      return;
-    }
-
-    const foregroundPicker =
-      customizerElement.querySelector(
-        "#qrnavi-foreground-picker"
-      );
-
-    const backgroundPicker =
-      customizerElement.querySelector(
-        "#qrnavi-background-picker"
-      );
-
-    const foregroundHex =
-      customizerElement.querySelector(
-        "#qrnavi-foreground-hex"
-      );
-
-    const backgroundHex =
-      customizerElement.querySelector(
-        "#qrnavi-background-hex"
-      );
-
-    const sizeValue =
-      customizerElement.querySelector(
-        "#qrnavi-size-value"
-      );
-
-
-    if (foregroundPicker) {
-      foregroundPicker.value =
-        normalizeHex(state.foreground) ||
-        DEFAULTS.foreground;
-    }
-
-    if (backgroundPicker) {
-      backgroundPicker.value =
-        normalizeHex(state.background) ||
-        DEFAULTS.background;
-    }
-
-    if (foregroundHex) {
-      foregroundHex.value =
-        state.foreground.toUpperCase();
-    }
-
-    if (backgroundHex) {
-      backgroundHex.value =
-        state.background.toUpperCase();
-    }
-
-    if (sizeValue) {
-      sizeValue.textContent =
-        state.size + " × " + state.size;
-    }
-
-
-    updateTemplateButtons();
-    updateSizeButtons();
-    updateContrast();
-    updateSwatches();
-  }
-
-  function updateTemplateButtons() {
-    const buttons =
-      customizerElement.querySelectorAll(
-        "[data-template]"
-      );
-
-    buttons.forEach(function (button) {
-      const id =
-        button.getAttribute("data-template");
-
-      const active =
-        id === state.template;
-
-      button.classList.toggle(
-        "is-active",
-        active
-      );
-
-      button.setAttribute(
-        "aria-pressed",
-        active ? "true" : "false"
-      );
-    });
-  }
-
-  function updateSizeButtons() {
-    const buttons =
-      customizerElement.querySelectorAll(
-        "[data-size]"
-      );
-
-    buttons.forEach(function (button) {
-      const size =
-        Number(
-          button.getAttribute("data-size")
-        );
-
-      const active =
-        size === state.size;
-
-      button.classList.toggle(
-        "is-active",
-        active
-      );
-
-      button.setAttribute(
-        "aria-pressed",
-        active ? "true" : "false"
-      );
-    });
-  }
-
-  function updateSwatches() {
-    const foregroundSwatch =
-      customizerElement.querySelector(
-        ".qrnavi-foreground-swatch"
-      );
-
-    const backgroundSwatch =
-      customizerElement.querySelector(
-        ".qrnavi-background-swatch"
-      );
-
-    if (foregroundSwatch) {
-      foregroundSwatch.style.background =
-        state.foreground;
-    }
-
-    if (backgroundSwatch) {
-      backgroundSwatch.style.background =
-        state.background;
-    }
-  }
-
-  /*
-   * ------------------------------------------------------------
-   * Contrast / Readability
-   * ------------------------------------------------------------
-   */
-
-  function updateContrast() {
-    const box =
-      customizerElement.querySelector(
-        "#qrnavi-contrast-box"
-      );
-
-    const title =
-      customizerElement.querySelector(
-        "#qrnavi-contrast-title"
-      );
-
-    const message =
-      customizerElement.querySelector(
-        "#qrnavi-contrast-message"
-      );
-
-    const icon =
-      customizerElement.querySelector(
-        ".qrnavi-contrast-icon"
-      );
-
-    if (!box || !title || !message) {
-      return;
-    }
-
-    const ratio = getContrastRatio(
-      state.foreground,
-      state.background
-    );
-
-    box.classList.remove(
-      "is-good",
-      "is-warning",
-      "is-poor"
-    );
-
-    if (ratio >= 7) {
-      box.classList.add("is-good");
-
-      if (icon) {
-        icon.textContent = "✓";
-      }
-
-      title.textContent =
-        "Excellent contrast";
-
-      message.textContent =
-        "Strong contrast for reliable QR scanning.";
-    } else if (ratio >= 4.5) {
-      box.classList.add("is-good");
-
-      if (icon) {
-        icon.textContent = "✓";
-      }
-
-      title.textContent =
-        "Good contrast";
-
-      message.textContent =
-        "These colors provide a solid readability level.";
-    } else if (ratio >= 3) {
-      box.classList.add("is-warning");
-
-      if (icon) {
-        icon.textContent = "!";
-      }
-
-      title.textContent =
-        "Low contrast";
-
-      message.textContent =
-        "Consider using darker QR color or a lighter background.";
-    } else {
-      box.classList.add("is-poor");
-
-      if (icon) {
-        icon.textContent = "!";
-      }
-
-      title.textContent =
-        "Poor contrast";
-
-      message.textContent =
-        "These colors may reduce scanning reliability.";
-    }
-  }
-
-  function getContrastRatio(foreground, background) {
-    const fg = hexToRGB(foreground);
-    const bg = hexToRGB(background);
-
-    if (!fg || !bg) {
-      return 1;
-    }
-
-    const fgLuminance =
-      getRelativeLuminance(fg);
-
-    const bgLuminance =
-      getRelativeLuminance(bg);
-
-    const lighter =
-      Math.max(
-        fgLuminance,
-        bgLuminance
-      );
-
-    const darker =
-      Math.min(
-        fgLuminance,
-        bgLuminance
-      );
-
-    return (
-      (lighter + 0.05) /
-      (darker + 0.05)
-    );
-  }
-
-  function getRelativeLuminance(rgb) {
-    const values = [
-      rgb.r,
-      rgb.g,
-      rgb.b
-    ].map(function (value) {
-      const normalized =
-        value / 255;
-
-      return normalized <= 0.03928
-        ? normalized / 12.92
-        : Math.pow(
-            (normalized + 0.055) / 1.055,
-            2.4
-          );
-    });
-
-    return (
-      values[0] * 0.2126 +
-      values[1] * 0.7152 +
-      values[2] * 0.0722
-    );
-  }
-
-  /*
-   * ------------------------------------------------------------
-   * Reset / Apply
-   * ------------------------------------------------------------
-   */
-
-  function resetCustomizer() {
-    state = {
-      ...DEFAULTS
-    };
-
-    renderPreview();
-    updateUI();
-
-    showEditorMessage(
-      "Customization reset to the QRNAVI default style."
-    );
-  }
-
-  function applyCustomization() {
-    const contrast =
-      getContrastRatio(
-        state.foreground,
-        state.background
-      );
-
-    if (contrast < 3) {
-      showEditorMessage(
-        "Please improve the color contrast before applying this design."
-      );
-
-      return;
-    }
-
-    appliedState = {
-      ...state
-    };
-
-    renderPreview();
-    updateUI();
-
-    const button =
-      customizerElement.querySelector(
-        "#qrnavi-apply-button"
-      );
-
-    if (button) {
-      const originalHTML =
-        button.innerHTML;
-
-      button.innerHTML = `
-        <span>Applied successfully</span>
-        <span class="qrnavi-apply-arrow">✓</span>
-      `;
-
-      button.classList.add(
-        "is-success"
-      );
-
-      window.setTimeout(function () {
-        button.innerHTML =
-          originalHTML;
-
-        button.classList.remove(
-          "is-success"
-        );
-      }, 1800);
-    }
-
-    showEditorMessage(
-      "Your customized QR is ready. Your QR information has not changed."
-    );
-
-    /*
-     * Expose applied state for download-system.js.
-     */
-    exposeState();
-  }
-
-  /*
-   * ------------------------------------------------------------
-   * Public State
-   * ------------------------------------------------------------
-   */
-
-  function exposeState() {
-    window.QRNAVI_CUSTOMIZER = {
-      getState: function () {
-        return {
-          ...state
-        };
-      },
-
-      getAppliedState: function () {
-        return {
-          ...appliedState
-        };
-      },
-
-      getForeground: function () {
-        return state.foreground;
-      },
-
-      getBackground: function () {
-        return state.background;
-      },
-
-      getSize: function () {
-        return state.size;
-      },
-
-      getTemplate: function () {
-        return state.template;
-      },
-
-      getContrastRatio: function () {
-        return getContrastRatio(
-          state.foreground,
-          state.background
-        );
-      },
-
-      reset: resetCustomizer,
-
-      apply: applyCustomization
-    };
-  }
-
-  /*
-   * ------------------------------------------------------------
-   * Messages
-   * ------------------------------------------------------------
-   */
-
-  function showEditorMessage(message) {
-    if (!customizerElement) {
-      return;
-    }
-
-    let element =
-      customizerElement.querySelector(
-        "#qrnavi-editor-note"
-      );
-
-    if (!element) {
-      return;
-    }
-
-    element.textContent = message;
-    element.classList.add(
-      "is-visible"
-    );
-
-    window.clearTimeout(
-      element._qrnaviMessageTimer
-    );
-
-    element._qrnaviMessageTimer =
-      window.setTimeout(function () {
-        element.classList.remove(
-          "is-visible"
-        );
-      }, 4000);
-  }
-
-  function clearEditorMessage() {
-    if (!customizerElement) {
-      return;
-    }
-
-    const element =
-      customizerElement.querySelector(
-        "#qrnavi-editor-note"
-      );
-
-    if (element) {
-      element.classList.remove(
-        "is-visible"
-      );
-    }
-  }
-
-  /*
-   * ------------------------------------------------------------
-   * Current QR data
-   * ------------------------------------------------------------
-   */
-
-  function getCurrentPayload() {
-    if (
-      window.QRNAVI &&
-      typeof window.QRNAVI.getCurrentPayload ===
-        "function"
-    ) {
-      return window.QRNAVI.getCurrentPayload();
-    }
-
-    return "";
-  }
-
-  /*
-   * ------------------------------------------------------------
-   * HEX helpers
-   * ------------------------------------------------------------
-   */
-
-  function isValidHex(value) {
-    return /^#[0-9a-fA-F]{6}$/.test(
-      value
-    );
-  }
-
-  function normalizeHex(value) {
-    if (!value) {
-      return null;
-    }
-
-    let color =
-      String(value).trim();
-
-    if (
-      /^[0-9a-fA-F]{6}$/.test(color)
-    ) {
-      color = "#" + color;
-    }
-
-    if (!isValidHex(color)) {
-      return null;
-    }
-
-    return color.toUpperCase();
-  }
-
-  function hexToRGB(hex) {
-    const normalized =
-      normalizeHex(hex);
-
-    if (!normalized) {
-      return null;
-    }
-
-    return {
-      r: parseInt(
-        normalized.slice(1, 3),
-        16
-      ),
-
-      g: parseInt(
-        normalized.slice(3, 5),
-        16
-      ),
-
-      b: parseInt(
-        normalized.slice(5, 7),
-        16
-      )
-    };
-  }
-
-  function syncColorPicker(
-    type,
-    color
-  ) {
-    if (!customizerElement) {
-      return;
-    }
-
-    const id =
-      type === "foreground"
-        ? "#qrnavi-foreground-picker"
-        : "#qrnavi-background-picker";
-
-    const picker =
-      customizerElement.querySelector(id);
-
-    if (picker) {
-      const normalized =
-        normalizeHex(color);
-
-      if (normalized) {
-        picker.value =
-          normalized;
-      }
-    }
-  }
-
-  function markInvalidInput(
-    element,
-    invalid
-  ) {
-    element.classList.toggle(
-      "is-invalid",
-      invalid
-    );
-
-    element.setAttribute(
-      "aria-invalid",
-      invalid ? "true" : "false"
-    );
-  }
-
-  /*
-   * ------------------------------------------------------------
-   * Security helpers
-   * ------------------------------------------------------------
-   */
-
-  function escapeHTML(value) {
-    return String(value)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  }
-
-  function escapeAttribute(value) {
-    return escapeHTML(value);
-  }
-
-  /*
-   * ------------------------------------------------------------
-   * Premium Customizer CSS
-   *
-   * This stylesheet is injected by the customizer so the
-   * existing index.html does not need to be modified just to
-   * display the editor.
-   * ------------------------------------------------------------
-   */
-
-  function injectCustomizerStyles() {
-    if (
-      document.getElementById(
-        "qrnavi-customizer-styles"
-      )
-    ) {
-      return;
-    }
-
-    const style =
-      document.createElement("style");
-
-    style.id =
-      "qrnavi-customizer-styles";
-
-    style.textContent = `
-      /* ======================================================
-         QRNAVI PREMIUM QR EDITOR
-         ====================================================== */
-
-      #qrnavi-customizer {
-        width: 100%;
-        margin: 28px 0 0;
-        font-family:
-          Inter,
-          -apple-system,
-          BlinkMacSystemFont,
-          "Segoe UI",
-          sans-serif;
-      }
-
-      .qrnavi-customizer-shell {
-        width: 100%;
-        background: #ffffff;
-        border: 1px solid #e5eaf1;
-        border-radius: 24px;
-        box-shadow:
-          0 18px 55px rgba(7, 20, 38, 0.08);
-        overflow: hidden;
-      }
-
-      .qrnavi-customizer-header {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 20px;
-        padding: 28px 24px;
-        background:
-          linear-gradient(
-            135deg,
-            #071426 0%,
-            #0c2039 100%
-          );
-        color: #ffffff;
-      }
-
-      .qrnavi-editor-eyebrow {
-        display: inline-block;
-        margin-bottom: 8px;
-        font-size: 11px;
-        line-height: 1;
-        letter-spacing: 0.12em;
-        font-weight: 800;
-        color: #8dc5ff;
-      }
-
-      .qrnavi-customizer-header h2 {
-        margin: 0;
-        font-size: 24px;
-        line-height: 1.2;
-        font-weight: 800;
-        letter-spacing: -0.02em;
-      }
-
-      .qrnavi-customizer-header p {
-        max-width: 620px;
-        margin: 9px 0 0;
-        color: #b9c8da;
-        font-size: 14px;
-        line-height: 1.6;
-      }
-
-      .qrnavi-editor-status {
-        display: inline-flex;
-        align-items: center;
-        gap: 7px;
-        flex: 0 0 auto;
-        padding: 8px 11px;
-        border: 1px solid rgba(255,255,255,0.13);
-        border-radius: 999px;
-        background: rgba(255,255,255,0.06);
-        color: #dcecff;
-        font-size: 11px;
-        font-weight: 700;
-        white-space: nowrap;
-      }
-
-      .qrnavi-status-dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: #55d98b;
-        box-shadow:
-          0 0 0 4px rgba(85,217,139,0.12);
-      }
-
-      .qrnavi-editor-section {
-        padding: 25px 24px;
-        border-bottom: 1px solid #edf0f4;
-      }
-
-      .qrnavi-section-title-row {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 16px;
-        margin-bottom: 17px;
-      }
-
-      .qrnavi-section-title-row h3 {
-        margin: 0;
-        color: #111827;
-        font-size: 16px;
-        line-height: 1.35;
-        font-weight: 800;
-      }
-
-      .qrnavi-section-title-row p {
-        margin: 5px 0 0;
-        color: #6b7280;
-        font-size: 13px;
-        line-height: 1.5;
-      }
-
-      /* Templates */
-
-      .qrnavi-template-grid {
-        display: grid;
-        grid-template-columns:
-          repeat(4, minmax(0, 1fr));
-        gap: 10px;
-      }
-
-      .qrnavi-template-card {
-        position: relative;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        min-width: 0;
-        padding: 11px;
-        border: 1px solid #e5eaf1;
-        border-radius: 15px;
-        background: #ffffff;
-        color: #111827;
-        text-align: left;
-        cursor: pointer;
-        transition:
-          border-color 0.18s ease,
-          box-shadow 0.18s ease,
-          transform 0.18s ease,
-          background 0.18s ease;
-      }
-
-      .qrnavi-template-card:hover {
-        border-color: #b8d8fa;
-        box-shadow:
-          0 7px 18px rgba(7, 20, 38, 0.07);
-        transform: translateY(-1px);
-      }
-
-      .qrnavi-template-card.is-active {
-        border-color: #2589f4;
-        background: #f7fbff;
-        box-shadow:
-          0 0 0 3px rgba(37,137,244,0.10);
-      }
-
-      .qrnavi-template-preview {
-        position: relative;
-        display: grid;
-        place-items: center;
-        flex: 0 0 43px;
-        width: 43px;
-        height: 43px;
-        border-radius: 10px;
-        background:
-          var(--template-bg);
-        overflow: hidden;
-      }
-
-      .qrnavi-mini-qr {
-        display: grid;
-        grid-template-columns:
-          repeat(3, 6px);
-        grid-template-rows:
-          repeat(3, 6px);
-        gap: 2px;
-        padding: 5px;
-      }
-
-      .qrnavi-mini-qr i {
-        display: block;
-        width: 6px;
-        height: 6px;
-        border-radius: 1px;
-        background: var(--template-fg);
-      }
-
-      .qrnavi-mini-qr i:nth-child(2),
-      .qrnavi-mini-qr i:nth-child(4),
-      .qrnavi-mini-qr i:nth-child(6),
-      .qrnavi-mini-qr i:nth-child(8) {
-        opacity: 0.28;
-      }
-
-      .qrnavi-template-info {
-        display: flex;
-        min-width: 0;
-        flex-direction: column;
-      }
-
-      .qrnavi-template-info strong {
-        overflow: hidden;
-        color: #172033;
-        font-size: 12px;
-        line-height: 1.35;
-        font-weight: 800;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .qrnavi-template-info small {
-        margin-top: 2px;
-        overflow: hidden;
-        color: #7b8492;
-        font-size: 10px;
-        line-height: 1.35;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .qrnavi-template-check {
-        position: absolute;
-        top: 7px;
-        right: 7px;
-        display: grid;
-        place-items: center;
-        width: 16px;
-        height: 16px;
-        border-radius: 50%;
-        background: #2589f4;
-        color: #ffffff;
-        font-size: 9px;
-        font-weight: 900;
-        opacity: 0;
-        transform: scale(0.75);
-        transition:
-          opacity 0.18s ease,
-          transform 0.18s ease;
-      }
-
-      .qrnavi-template-card.is-active
-      .qrnavi-template-check {
-        opacity: 1;
-        transform: scale(1);
-      }
-
-      /* Color */
-
-      .qrnavi-control-label-row {
-        margin-bottom: 9px;
-        color: #4b5563;
-        font-size: 12px;
-        font-weight: 700;
-      }
-
-      .qrnavi-preset-grid {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 7px;
-      }
-
-      .qrnavi-preset-button {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        min-height: 34px;
-        padding: 6px 9px;
-        border: 1px solid #e5eaf1;
-        border-radius: 9px;
-        background: #ffffff;
-        color: #4b5563;
-        font-size: 11px;
-        font-weight: 700;
-        cursor: pointer;
-        transition:
-          border-color 0.18s ease,
-          background 0.18s ease;
-      }
-
-      .qrnavi-preset-button:hover {
-        border-color: #b8d8fa;
-        background: #f8fbff;
-      }
-
-      .qrnavi-preset-preview {
-        width: 16px;
-        height: 16px;
-        border: 1px solid rgba(7,20,38,0.10);
-        border-radius: 5px;
-        background:
-          linear-gradient(
-            135deg,
-            var(--preset-fg) 0 50%,
-            var(--preset-bg) 50% 100%
-          );
-      }
-
-      .qrnavi-color-editor-grid {
-        display: grid;
-        grid-template-columns:
-          repeat(2, minmax(0, 1fr));
-        gap: 12px;
-        margin-top: 17px;
-      }
-
-      .qrnavi-color-card {
-        padding: 15px;
-        border: 1px solid #e6ebf1;
-        border-radius: 15px;
-        background: #fbfcfe;
-      }
-
-      .qrnavi-color-card-heading {
-        display: flex;
-        align-items: center;
-        gap: 9px;
-        margin-bottom: 12px;
-      }
-
-      .qrnavi-color-swatch {
-        width: 30px;
-        height: 30px;
-        border: 1px solid #dfe5ed;
-        border-radius: 9px;
-        background: #071426;
-      }
-
-      .qrnavi-color-card-heading div {
-        display: flex;
-        flex-direction: column;
-      }
-
-      .qrnavi-color-card-heading strong {
-        color: #1f2937;
-        font-size: 12px;
-        line-height: 1.3;
-      }
-
-      .qrnavi-color-card-heading small {
-        margin-top: 2px;
-        color: #8a94a3;
-        font-size: 10px;
-      }
-
-      .qrnavi-color-input-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-
-      .qrnavi-color-input-row input[type="color"] {
-        width: 42px;
-        height: 38px;
-        padding: 3px;
-        border: 1px solid #dce3ec;
-        border-radius: 9px;
-        background: #ffffff;
-        cursor: pointer;
-      }
-
-      .qrnavi-hex-input {
-        width: 100%;
-        min-width: 0;
-        height: 38px;
-        padding: 0 11px;
-        border: 1px solid #dce3ec;
-        border-radius: 9px;
-        outline: none;
-        background: #ffffff;
-        color: #111827;
-        font-family:
-          ui-monospace,
-          SFMono-Regular,
-          Menlo,
-          Monaco,
-          Consolas,
-          monospace;
-        font-size: 12px;
-        font-weight: 700;
-        transition:
-          border-color 0.18s ease,
-          box-shadow 0.18s ease;
-      }
-
-      .qrnavi-hex-input:focus {
-        border-color: #2589f4;
-        box-shadow:
-          0 0 0 3px rgba(37,137,244,0.10);
-      }
-
-      .qrnavi-hex-input.is-invalid {
-        border-color: #dc2626;
-        box-shadow:
-          0 0 0 3px rgba(220,38,38,0.08);
-      }
-
-      /* Contrast */
-
-      .qrnavi-contrast-box {
-        display: flex;
-        align-items: flex-start;
-        gap: 10px;
-        margin-top: 13px;
-        padding: 12px 13px;
-        border: 1px solid #dce8f4;
-        border-radius: 12px;
-        background: #f7fbff;
-      }
-
-      .qrnavi-contrast-icon {
-        display: grid;
-        place-items: center;
-        flex: 0 0 22px;
-        width: 22px;
-        height: 22px;
-        border-radius: 50%;
-        background: #dbeafe;
-        color: #1769aa;
-        font-size: 11px;
-        font-weight: 900;
-      }
-
-      .qrnavi-contrast-box strong {
-        display: block;
-        color: #1f3b56;
-        font-size: 11px;
-        line-height: 1.4;
-      }
-
-      .qrnavi-contrast-box p {
-        margin: 2px 0 0;
-        color: #65758a;
-        font-size: 11px;
-        line-height: 1.45;
-      }
-
-      .qrnavi-contrast-box.is-good {
-        border-color: #cfe9dc;
-        background: #f5fcf8;
-      }
-
-      .qrnavi-contrast-box.is-good
-      .qrnavi-contrast-icon {
-        background: #dcf5e6;
-        color: #16834a;
-      }
-
-      .qrnavi-contrast-box.is-good strong {
-        color: #16643e;
-      }
-
-      .qrnavi-contrast-box.is-warning {
-        border-color: #f0dfb6;
-        background: #fffaf0;
-      }
-
-      .qrnavi-contrast-box.is-warning
-      .qrnavi-contrast-icon {
-        background: #fff0c7;
-        color: #9a6700;
-      }
-
-      .qrnavi-contrast-box.is-warning strong {
-        color: #805900;
-      }
-
-      .qrnavi-contrast-box.is-poor {
-        border-color: #f1caca;
-        background: #fff7f7;
-      }
-
-      .qrnavi-contrast-box.is-poor
-      .qrnavi-contrast-icon {
-        background: #fee2e2;
-        color: #b91c1c;
-      }
-
-      .qrnavi-contrast-box.is-poor strong {
-        color: #991b1b;
-      }
-
-      /* Size */
-
-      .qrnavi-size-value {
-        flex: 0 0 auto;
-        padding: 6px 9px;
-        border: 1px solid #e3e9f0;
-        border-radius: 8px;
-        background: #f8fafc;
-        color: #536174;
-        font-family:
-          ui-monospace,
-          SFMono-Regular,
-          Menlo,
-          Monaco,
-          Consolas,
-          monospace;
-        font-size: 10px;
-        font-weight: 800;
-      }
-
-      .qrnavi-size-grid {
-        display: grid;
-        grid-template-columns:
-          repeat(4, minmax(0, 1fr));
-        gap: 9px;
-      }
-
-      .qrnavi-size-option {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        min-width: 0;
-        padding: 12px;
-        border: 1px solid #e5eaf1;
-        border-radius: 12px;
-        background: #ffffff;
-        text-align: left;
-        cursor: pointer;
-        transition:
-          border-color 0.18s ease,
-          background 0.18s ease,
-          box-shadow 0.18s ease;
-      }
-
-      .qrnavi-size-option:hover {
-        border-color: #b8d8fa;
-        background: #f9fcff;
-      }
-
-      .qrnavi-size-option.is-active {
-        border-color: #2589f4;
-        background: #f7fbff;
-        box-shadow:
-          0 0 0 3px rgba(37,137,244,0.09);
-      }
-
-      .qrnavi-size-option strong {
-        color: #172033;
-        font-size: 12px;
-        line-height: 1.3;
-      }
-
-      .qrnavi-size-option span {
-        margin-top: 3px;
-        color: #7b8492;
-        font-size: 10px;
-      }
-
-      .qrnavi-size-option small {
-        margin-top: 7px;
-        color: #2589f4;
-        font-family:
-          ui-monospace,
-          SFMono-Regular,
-          Menlo,
-          Monaco,
-          Consolas,
-          monospace;
-        font-size: 10px;
-        font-weight: 800;
-      }
-
-      /* Reliability */
-
-      .qrnavi-reliability-section {
-        background: #fbfcfe;
-      }
-
-      .qrnavi-reliability-card {
-        display: flex;
-        align-items: flex-start;
-        gap: 11px;
-        padding: 13px;
-        border: 1px solid #e3e9f0;
-        border-radius: 13px;
-        background: #ffffff;
-      }
-
-      .qrnavi-reliability-icon {
-        display: grid;
-        place-items: center;
-        flex: 0 0 28px;
-        width: 28px;
-        height: 28px;
-        border-radius: 9px;
-        background: #e7f3ff;
-        color: #2589f4;
-        font-size: 12px;
-        font-weight: 900;
-      }
-
-      .qrnavi-reliability-card strong {
-        display: block;
-        color: #1f2937;
-        font-size: 12px;
-        line-height: 1.4;
-      }
-
-      .qrnavi-reliability-card p {
-        margin: 3px 0 0;
-        color: #6b7280;
-        font-size: 11px;
-        line-height: 1.5;
-      }
-
-      /* Actions */
-
-      .qrnavi-editor-actions {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 20px 24px;
-      }
-
-      .qrnavi-reset-button,
-      .qrnavi-apply-button {
-        min-height: 45px;
-        border-radius: 11px;
-        font-family: inherit;
-        font-size: 12px;
-        font-weight: 800;
-        cursor: pointer;
-        transition:
-          transform 0.18s ease,
-          box-shadow 0.18s ease,
-          background 0.18s ease,
-          border-color 0.18s ease;
-      }
-
-      .qrnavi-reset-button {
-        flex: 0 0 auto;
-        padding: 0 17px;
-        border: 1px solid #dfe5ec;
-        background: #ffffff;
-        color: #4b5563;
-      }
-
-      .qrnavi-reset-button:hover {
-        border-color: #c8d1dc;
-        background: #f8fafc;
-      }
-
-      .qrnavi-apply-button {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 10px;
-        flex: 1;
-        padding: 0 18px;
-        border: 1px solid #2589f4;
-        background: #2589f4;
-        color: #ffffff;
-        box-shadow:
-          0 8px 18px rgba(37,137,244,0.20);
-      }
-
-      .qrnavi-apply-button:hover {
-        background: #1478df;
-        transform: translateY(-1px);
-        box-shadow:
-          0 11px 22px rgba(37,137,244,0.24);
-      }
-
-      .qrnavi-apply-button.is-success {
-        border-color: #16834a;
-        background: #16834a;
-        box-shadow:
-          0 8px 18px rgba(22,131,74,0.18);
-      }
-
-      .qrnavi-apply-arrow {
-        font-size: 17px;
-        line-height: 1;
-      }
-
-      .qrnavi-editor-note {
-        min-height: 0;
-        padding: 0 24px;
-        color: #6b7280;
-        font-size: 11px;
-        line-height: 1.5;
-        opacity: 0;
-        transform: translateY(-3px);
-        transition:
-          opacity 0.2s ease,
-          transform 0.2s ease;
-      }
-
-      .qrnavi-editor-note.is-visible {
-        padding-bottom: 19px;
-        opacity: 1;
-        transform: translateY(0);
-      }
-
-      /* Live QR */
-
-      .qrnavi-live-qr {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 100%;
-        padding: 0;
-        background: transparent;
-      }
-
-      .qrnavi-live-qr canvas,
-      .qrnavi-live-qr img {
-        display: block;
-        max-width: 100%;
-        height: auto;
-      }
-
-      /* Tablet */
-
-      @media (max-width: 900px) {
-        .qrnavi-template-grid {
-          grid-template-columns:
-            repeat(2, minmax(0, 1fr));
-        }
-
-        .qrnavi-size-grid {
-          grid-template-columns:
-            repeat(2, minmax(0, 1fr));
-        }
-      }
-
-      /* Mobile */
-
-      @media (max-width: 640px) {
-
-        #qrnavi-customizer {
-          margin-top: 20px;
-        }
-
-        .qrnavi-customizer-shell {
-          border-radius: 18px;
-        }
-
-        .qrnavi-customizer-header {
-          flex-direction: column;
-          padding: 22px 17px;
-        }
-
-        .qrnavi-customizer-header h2 {
-          font-size: 21px;
-        }
-
-        .qrnavi-customizer-header p {
-          font-size: 12px;
-        }
-
-        .qrnavi-editor-status {
-          align-self: flex-start;
-        }
-
-        .qrnavi-editor-section {
-          padding: 20px 17px;
-        }
-
-        .qrnavi-template-grid {
-          grid-template-columns:
-            repeat(2, minmax(0, 1fr));
-          gap: 8px;
-        }
-
-        .qrnavi-template-card {
-          padding: 9px;
-        }
-
-        .qrnavi-template-preview {
-          flex-basis: 38px;
-          width: 38px;
-          height: 38px;
-        }
-
-        .qrnavi-template-info strong {
-          font-size: 11px;
-        }
-
-        .qrnavi-template-info small {
-          font-size: 9px;
-        }
-
-        .qrnavi-color-editor-grid {
-          grid-template-columns: 1fr;
-        }
-
-        .qrnavi-preset-grid {
-          display: grid;
-          grid-template-columns:
-            repeat(2, minmax(0, 1fr));
-        }
-
-        .qrnavi-preset-button {
-          justify-content: flex-start;
-          width: 100%;
-        }
-
-        .qrnavi-size-grid {
-          grid-template-columns:
-            repeat(2, minmax(0, 1fr));
-        }
-
-        .qrnavi-editor-actions {
-          padding: 17px;
-        }
-
-        .qrnavi-reset-button {
-          padding: 0 14px;
-        }
-
-        .qrnavi-apply-button {
-          padding: 0 13px;
-        }
-
-        .qrnavi-editor-note {
-          padding-left: 17px;
-          padding-right: 17px;
-        }
-
-        .qrnavi-editor-note.is-visible {
-          padding-bottom: 17px;
-        }
-      }
-
-      /* Very small screens */
-
-      @media (max-width: 380px) {
-
-        .qrnavi-template-grid {
-          grid-template-columns: 1fr;
-        }
-
-        .qrnavi-color-card {
-          padding: 12px;
-        }
-
-        .qrnavi-editor-actions {
-          gap: 7px;
-        }
-
-        .qrnavi-reset-button {
-          padding: 0 11px;
-          font-size: 11px;
-        }
-
-        .qrnavi-apply-button {
-          font-size: 11px;
-        }
-      }
-
-      /* Reduced motion */
-
-      @media (prefers-reduced-motion: reduce) {
-
-        .qrnavi-template-card,
-        .qrnavi-size-option,
-        .qrnavi-preset-button,
-        .qrnavi-reset-button,
-        .qrnavi-apply-button,
-        .qrnavi-editor-note,
-        .qrnavi-template-check {
-          transition: none;
-        }
-      }
-    `;
-
-    document.head.appendChild(style);
-  }
-
-  /*
-   * ------------------------------------------------------------
-   * Boot
-   * ------------------------------------------------------------
-   */
-
-  function boot() {
-    init();
-    exposeState();
-  }
-
-  if (
-    document.readyState === "loading"
-  ) {
-    document.addEventListener(
-      "DOMContentLoaded",
-      boot,
-      {
-        once: true
-      }
-    );
-  } else {
-    boot();
-  }
-
-  /*
-   * Re-check after the existing generator has had time to load
-   * qrcodejs and create its QR.
-   */
-  window.setTimeout(
-    init,
-    350
-  );
-
-  window.setTimeout(
-    init,
-    1000
-  );
-
-})();
+</body>
+</html>
