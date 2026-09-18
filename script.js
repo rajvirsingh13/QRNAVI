@@ -3,6 +3,8 @@
    Compatible with:
    index.html
    style.css
+   download-system.js
+   qr-customizer.js
    ========================================================= */
 
 "use strict";
@@ -17,6 +19,12 @@ const QRNAVI_CONFIG = {
     "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js",
 
   size: 320,
+
+  /*
+    Quiet zone around the actual QR code.
+    This is part of the generated image, not CSS.
+  */
+  quietZone: 16,
 
   foreground: "#071426",
   background: "#ffffff"
@@ -318,7 +326,13 @@ async function handleGenerateClick() {
 
     await loadQRCodeLibrary();
 
-    generateQRCode(payload);
+    await generateQRCode(payload);
+
+    /*
+      On mobile, automatically bring the newly generated
+      QR code into the visible screen area.
+    */
+    scheduleMobileQRScroll();
 
   } catch (error) {
 
@@ -1076,18 +1090,66 @@ function generateQRCode(payload) {
   }
 
   if (!qrOutput) {
-    return;
+    return Promise.resolve();
   }
 
+  /*
+    Keep the final QR output clean.
+  */
   qrOutput.innerHTML = "";
 
+  /*
+    Create the QR slightly smaller than the final canvas.
+    The remaining space becomes the required white quiet zone.
+  */
+  const quietZone = QRNAVI_CONFIG.quietZone;
+
+  const innerSize =
+    QRNAVI_CONFIG.size - (quietZone * 2);
+
+  /*
+    Temporary container used only for qrcodejs rendering.
+  */
+  const temporaryContainer =
+    document.createElement("div");
+
+  temporaryContainer.style.position =
+    "absolute";
+
+  temporaryContainer.style.left =
+    "-10000px";
+
+  temporaryContainer.style.top =
+    "0";
+
+  temporaryContainer.style.width =
+    innerSize + "px";
+
+  temporaryContainer.style.height =
+    innerSize + "px";
+
+  temporaryContainer.style.background =
+    QRNAVI_CONFIG.background;
+
+  temporaryContainer.setAttribute(
+    "aria-hidden",
+    "true"
+  );
+
+  document.body.appendChild(
+    temporaryContainer
+  );
+
+  /*
+    Generate the actual QR modules.
+  */
   currentQRCode = new QRCode(
-    qrOutput,
+    temporaryContainer,
     {
       text: payload,
 
-      width: QRNAVI_CONFIG.size,
-      height: QRNAVI_CONFIG.size,
+      width: innerSize,
+      height: innerSize,
 
       colorDark:
         QRNAVI_CONFIG.foreground,
@@ -1099,6 +1161,224 @@ function generateQRCode(payload) {
         QRCode.CorrectLevel.M
     }
   );
+
+  /*
+    qrcodejs normally creates a canvas and/or image.
+    Wait one frame so the rendered QR is available.
+  */
+  return new Promise(function (resolve, reject) {
+
+    requestAnimationFrame(function () {
+
+      try {
+
+        const sourceCanvas =
+          temporaryContainer.querySelector(
+            "canvas"
+          );
+
+        const sourceImage =
+          temporaryContainer.querySelector(
+            "img"
+          );
+
+        if (!sourceCanvas && !sourceImage) {
+          throw new Error(
+            "QR image was not rendered."
+          );
+        }
+
+        /*
+          Final canvas:
+          320 x 320
+          with 16px white quiet zone on all sides.
+        */
+        const finalCanvas =
+          document.createElement("canvas");
+
+        finalCanvas.width =
+          QRNAVI_CONFIG.size;
+
+        finalCanvas.height =
+          QRNAVI_CONFIG.size;
+
+        finalCanvas.setAttribute(
+          "aria-label",
+          "Generated QR code"
+        );
+
+        finalCanvas.style.display =
+          "block";
+
+        finalCanvas.style.width =
+          QRNAVI_CONFIG.size + "px";
+
+        finalCanvas.style.height =
+          QRNAVI_CONFIG.size + "px";
+
+        const context =
+          finalCanvas.getContext("2d");
+
+        if (!context) {
+          throw new Error(
+            "QR canvas could not be created."
+          );
+        }
+
+        /*
+          Fill the complete image with the selected
+          QR background color.
+        */
+        context.fillStyle =
+          QRNAVI_CONFIG.background;
+
+        context.fillRect(
+          0,
+          0,
+          QRNAVI_CONFIG.size,
+          QRNAVI_CONFIG.size
+        );
+
+        /*
+          Draw the actual QR inside the quiet zone.
+        */
+        if (sourceCanvas) {
+
+          context.drawImage(
+            sourceCanvas,
+            quietZone,
+            quietZone,
+            innerSize,
+            innerSize
+          );
+
+        } else if (sourceImage) {
+
+          context.drawImage(
+            sourceImage,
+            quietZone,
+            quietZone,
+            innerSize,
+            innerSize
+          );
+
+        } else {
+
+          throw new Error(
+            "QR image source is unavailable."
+          );
+        }
+
+        /*
+          Replace qrcodejs output with the final,
+          properly padded canvas.
+        */
+        qrOutput.innerHTML = "";
+
+        qrOutput.appendChild(
+          finalCanvas
+        );
+
+        /*
+          Keep currentQRCode available for the public API.
+        */
+        currentQRCode = {
+          payload: payload,
+          canvas: finalCanvas,
+          size: QRNAVI_CONFIG.size,
+          quietZone: quietZone
+        };
+
+        /*
+          Remove temporary rendering container.
+        */
+        temporaryContainer.remove();
+
+        /*
+          Make sure the QR output is visible.
+        */
+        qrOutput.hidden = false;
+        qrOutput.style.display = "flex";
+        qrOutput.style.justifyContent = "center";
+        qrOutput.style.alignItems = "center";
+
+        resolve();
+
+      } catch (error) {
+
+        temporaryContainer.remove();
+
+        reject(error);
+      }
+
+    });
+  });
+}
+
+
+/* =========================================================
+   MOBILE QR AUTO SCROLL
+========================================================= */
+
+function scheduleMobileQRScroll() {
+
+  /*
+    Only use this behavior on mobile-sized screens.
+    Desktop layout should remain where the user generated it.
+  */
+  if (
+    !window.matchMedia ||
+    !window.matchMedia("(max-width: 899px)").matches
+  ) {
+    return;
+  }
+
+  /*
+    Wait until the browser has painted the final QR.
+  */
+  requestAnimationFrame(function () {
+
+    setTimeout(function () {
+
+      if (!qrOutput) {
+        return;
+      }
+
+      /*
+        Make sure the final QR actually exists before
+        attempting to scroll.
+      */
+      const generatedCanvas =
+        qrOutput.querySelector("canvas");
+
+      if (!generatedCanvas) {
+        return;
+      }
+
+      /*
+        Centering the QR in the viewport makes it clear
+        that generation has completed and keeps the
+        complete QR visible on normal phone screens.
+      */
+      try {
+
+        qrOutput.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+          inline: "nearest"
+        });
+
+      } catch (error) {
+
+        /*
+          Fallback for older browsers.
+        */
+        qrOutput.scrollIntoView();
+      }
+
+    }, 100);
+
+  });
 }
 
 
