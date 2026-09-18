@@ -18,13 +18,21 @@ const QRNAVI_CONFIG = {
   libraryUrl:
     "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js",
 
+  /*
+    Final downloaded/displayed QR image size.
+  */
   size: 320,
 
   /*
-    Quiet zone around the actual QR code.
-    This is part of the generated image, not CSS.
+    Real white quiet zone around the QR code.
+
+    The quiet zone is included inside the final PNG.
+    It is NOT just CSS spacing.
+
+    48px gives a reliable visible margin around
+    the QR modules on the final 320px image.
   */
-  quietZone: 16,
+  quietZone: 48,
 
   foreground: "#071426",
   background: "#ffffff"
@@ -57,6 +65,7 @@ let currentQRCode = null;
 ========================================================= */
 
 document.addEventListener("DOMContentLoaded", function () {
+
   qrType = document.getElementById("qr-type");
   qrInput = document.getElementById("qr-input");
   generateButton = document.getElementById("generate-btn");
@@ -79,15 +88,27 @@ document.addEventListener("DOMContentLoaded", function () {
 
 function setupGenerator() {
 
-  qrType.addEventListener("change", handleQRTypeChange);
+  qrType.addEventListener(
+    "change",
+    handleQRTypeChange
+  );
 
-  generateButton.addEventListener("click", handleGenerateClick);
+  generateButton.addEventListener(
+    "click",
+    handleGenerateClick
+  );
 
   if (generatorForm) {
-    generatorForm.addEventListener("submit", function (event) {
-      event.preventDefault();
-      handleGenerateClick();
-    });
+
+    generatorForm.addEventListener(
+      "submit",
+      function (event) {
+
+        event.preventDefault();
+
+        handleGenerateClick();
+      }
+    );
   }
 
   handleQRTypeChange();
@@ -96,7 +117,11 @@ function setupGenerator() {
     Generate an initial QR only when there is already
     meaningful input. Otherwise keep the preview empty.
   */
-  if (qrInput && qrInput.value.trim() !== "") {
+  if (
+    qrInput &&
+    qrInput.value.trim() !== ""
+  ) {
+
     handleGenerateClick();
   }
 }
@@ -113,12 +138,16 @@ function handleQRTypeChange() {
   clearMessage();
 
   if (type === "wifi") {
+
     showWiFiFields();
+
     hideGenericInput();
+
     return;
   }
 
   hideWiFiFields();
+
   showGenericInput(type);
 }
 
@@ -141,9 +170,13 @@ function showGenericInput(type) {
 
   const settings = getInputSettings(type);
 
-  qrInput.placeholder = settings.placeholder;
+  qrInput.placeholder =
+    settings.placeholder;
 
-  qrInput.setAttribute("aria-label", settings.label);
+  qrInput.setAttribute(
+    "aria-label",
+    settings.label
+  );
 }
 
 
@@ -192,7 +225,8 @@ function getInputSettings(type) {
     case "sms":
       return {
         label: "SMS Information",
-        placeholder: "Enter phone number and message"
+        placeholder:
+          "Enter phone number and message"
       };
 
     case "vcard":
@@ -205,25 +239,29 @@ function getInputSettings(type) {
     case "whatsapp":
       return {
         label: "WhatsApp Number or Link",
-        placeholder: "+91 9876543210"
+        placeholder:
+          "+91 9876543210"
       };
 
     case "instagram":
       return {
         label: "Instagram Profile",
-        placeholder: "https://instagram.com/username"
+        placeholder:
+          "https://instagram.com/username"
       };
 
     case "location":
       return {
         label: "Location",
-        placeholder: "Enter a Google Maps link or location"
+        placeholder:
+          "Enter a Google Maps link or location"
       };
 
     default:
       return {
         label: "Information",
-        placeholder: "Enter your information"
+        placeholder:
+          "Enter your information"
       };
   }
 }
@@ -264,18 +302,40 @@ function showWiFiFields() {
 
     <div class="form-group">
       <label for="wifi-security">Security</label>
-      <select id="wifi-security" name="wifi-security">
-        <option value="WPA">WPA/WPA2</option>
-        <option value="WEP">WEP</option>
-        <option value="nopass">No Password</option>
+      <select
+        id="wifi-security"
+        name="wifi-security"
+      >
+        <option value="WPA">
+          WPA/WPA2
+        </option>
+
+        <option value="WEP">
+          WEP
+        </option>
+
+        <option value="nopass">
+          No Password
+        </option>
       </select>
     </div>
 
     <div class="form-group">
-      <label for="wifi-hidden">Hidden Network</label>
-      <select id="wifi-hidden" name="wifi-hidden">
-        <option value="false">No</option>
-        <option value="true">Yes</option>
+      <label for="wifi-hidden">
+        Hidden Network
+      </label>
+
+      <select
+        id="wifi-hidden"
+        name="wifi-hidden"
+      >
+        <option value="false">
+          No
+        </option>
+
+        <option value="true">
+          Yes
+        </option>
       </select>
     </div>
   `;
@@ -309,14 +369,25 @@ async function handleGenerateClick() {
   let payload;
 
   try {
+
     payload = buildPayload(type);
+
   } catch (error) {
-    showMessage(error.message || "Please check your information.");
+
+    showMessage(
+      error.message ||
+      "Please check your information."
+    );
+
     return;
   }
 
   if (!payload) {
-    showMessage("Please enter the required information.");
+
+    showMessage(
+      "Please enter the required information."
+    );
+
     return;
   }
 
@@ -324,19 +395,31 @@ async function handleGenerateClick() {
 
   try {
 
+    /*
+      Load QR library first.
+    */
     await loadQRCodeLibrary();
 
+    /*
+      Generate and completely finish the final canvas
+      before doing anything else.
+    */
     await generateQRCode(payload);
 
     /*
-      On mobile, automatically bring the newly generated
-      QR code into the visible screen area.
+      Wait for the browser to paint the QR.
+      Then move the user's screen to the generated QR.
     */
+    await waitForQRPaint();
+
     scheduleMobileQRScroll();
 
   } catch (error) {
 
-    console.error("QRNAVI QR generation error:", error);
+    console.error(
+      "QRNAVI QR generation error:",
+      error
+    );
 
     showMessage(
       "QR code could not be generated. Please try again."
@@ -388,7 +471,9 @@ function buildPayload(type) {
       return buildLocationPayload();
 
     default:
-      throw new Error("Unsupported QR code type.");
+      throw new Error(
+        "Unsupported QR code type."
+      );
   }
 }
 
@@ -402,7 +487,10 @@ function buildURLPayload() {
   const value = getGenericInput();
 
   if (!value) {
-    throw new Error("Please enter a website URL.");
+
+    throw new Error(
+      "Please enter a website URL."
+    );
   }
 
   let url;
@@ -422,6 +510,7 @@ function buildURLPayload() {
     url.protocol !== "http:" &&
     url.protocol !== "https:"
   ) {
+
     throw new Error(
       "Only HTTP and HTTPS website URLs are supported."
     );
@@ -440,7 +529,10 @@ function buildTextPayload() {
   const value = getGenericInput();
 
   if (!value) {
-    throw new Error("Please enter some text.");
+
+    throw new Error(
+      "Please enter some text."
+    );
   }
 
   return value;
@@ -453,10 +545,17 @@ function buildTextPayload() {
 
 function buildWiFiPayload() {
 
-  const ssidElement = document.getElementById("wifi-ssid");
-  const passwordElement = document.getElementById("wifi-password");
-  const securityElement = document.getElementById("wifi-security");
-  const hiddenElement = document.getElementById("wifi-hidden");
+  const ssidElement =
+    document.getElementById("wifi-ssid");
+
+  const passwordElement =
+    document.getElementById("wifi-password");
+
+  const securityElement =
+    document.getElementById("wifi-security");
+
+  const hiddenElement =
+    document.getElementById("wifi-hidden");
 
   if (
     !ssidElement ||
@@ -464,17 +563,26 @@ function buildWiFiPayload() {
     !securityElement ||
     !hiddenElement
   ) {
+
     throw new Error(
       "WiFi fields are not available."
     );
   }
 
-  const ssid = ssidElement.value.trim();
-  const password = passwordElement.value;
-  const security = securityElement.value;
-  const hidden = hiddenElement.value === "true";
+  const ssid =
+    ssidElement.value.trim();
+
+  const password =
+    passwordElement.value;
+
+  const security =
+    securityElement.value;
+
+  const hidden =
+    hiddenElement.value === "true";
 
   if (!ssid) {
+
     throw new Error(
       "Please enter the WiFi network name."
     );
@@ -484,6 +592,7 @@ function buildWiFiPayload() {
     security !== "nopass" &&
     !password
   ) {
+
     throw new Error(
       "Please enter the WiFi password."
     );
@@ -491,13 +600,17 @@ function buildWiFiPayload() {
 
   return (
     "WIFI:" +
-    "T:" + escapeWiFiValue(security) +
+    "T:" +
+    escapeWiFiValue(security) +
     ";" +
-    "S:" + escapeWiFiValue(ssid) +
+    "S:" +
+    escapeWiFiValue(ssid) +
     ";" +
-    "P:" + escapeWiFiValue(password) +
+    "P:" +
+    escapeWiFiValue(password) +
     ";" +
-    "H:" + (hidden ? "true" : "false") +
+    "H:" +
+    (hidden ? "true" : "false") +
     ";;"
   );
 }
@@ -519,17 +632,21 @@ function escapeWiFiValue(value) {
 
 function buildEmailPayload() {
 
-  const value = getGenericInput();
+  const value =
+    getGenericInput();
 
   if (!value) {
+
     throw new Error(
       "Please enter an email address."
     );
   }
 
-  const email = value.trim();
+  const email =
+    value.trim();
 
   if (!isValidEmail(email)) {
+
     throw new Error(
       "Please enter a valid email address."
     );
@@ -545,23 +662,30 @@ function buildEmailPayload() {
 
 function buildPhonePayload() {
 
-  const value = getGenericInput();
+  const value =
+    getGenericInput();
 
   if (!value) {
+
     throw new Error(
       "Please enter a phone number."
     );
   }
 
-  const phone = value.trim();
+  const phone =
+    value.trim();
 
   if (!isReasonablePhoneNumber(phone)) {
+
     throw new Error(
       "Please enter a valid phone number."
     );
   }
 
-  return "tel:" + phone.replace(/[^\d+]/g, "");
+  return (
+    "tel:" +
+    phone.replace(/[^\d+]/g, "")
+  );
 }
 
 
@@ -571,9 +695,11 @@ function buildPhonePayload() {
 
 function buildSMSPayload() {
 
-  const value = getGenericInput();
+  const value =
+    getGenericInput();
 
   if (!value) {
+
     throw new Error(
       "Please enter an SMS phone number or message."
     );
@@ -586,27 +712,36 @@ function buildSMSPayload() {
     number: message
   */
 
-  const parts = splitSMSInput(value);
+  const parts =
+    splitSMSInput(value);
 
-  const phone = parts.phone;
-  const message = parts.message;
+  const phone =
+    parts.phone;
+
+  const message =
+    parts.message;
 
   if (!phone) {
+
     throw new Error(
       "Please enter an SMS phone number."
     );
   }
 
   if (!isReasonablePhoneNumber(phone)) {
+
     throw new Error(
       "Please enter a valid SMS phone number."
     );
   }
 
-  let result = "SMSTO:" + phone;
+  let result =
+    "SMSTO:" + phone;
 
   if (message) {
-    result += ":" + message;
+
+    result +=
+      ":" + message;
   }
 
   return result;
@@ -615,28 +750,46 @@ function buildSMSPayload() {
 
 function splitSMSInput(value) {
 
-  const separatorIndex = value.indexOf("|");
+  const separatorIndex =
+    value.indexOf("|");
 
   if (separatorIndex !== -1) {
 
     return {
-      phone: value.slice(0, separatorIndex).trim(),
-      message: value.slice(separatorIndex + 1).trim()
+      phone:
+        value
+          .slice(0, separatorIndex)
+          .trim(),
+
+      message:
+        value
+          .slice(separatorIndex + 1)
+          .trim()
     };
   }
 
-  const colonIndex = value.indexOf(":");
+  const colonIndex =
+    value.indexOf(":");
 
   if (
     colonIndex > 0 &&
     /^\+?[\d\s().-]+$/.test(
-      value.slice(0, colonIndex).trim()
+      value
+        .slice(0, colonIndex)
+        .trim()
     )
   ) {
 
     return {
-      phone: value.slice(0, colonIndex).trim(),
-      message: value.slice(colonIndex + 1).trim()
+      phone:
+        value
+          .slice(0, colonIndex)
+          .trim(),
+
+      message:
+        value
+          .slice(colonIndex + 1)
+          .trim()
     };
   }
 
@@ -653,9 +806,11 @@ function splitSMSInput(value) {
 
 function buildVCardPayload() {
 
-  const value = getGenericInput();
+  const value =
+    getGenericInput();
 
   if (!value) {
+
     throw new Error(
       "Please enter contact information."
     );
@@ -667,19 +822,24 @@ function buildVCardPayload() {
   */
 
   if (
-    value.toUpperCase().includes("BEGIN:VCARD")
+    value
+      .toUpperCase()
+      .includes("BEGIN:VCARD")
   ) {
+
     return value;
   }
 
-  const lines = value
-    .split(/\r?\n/)
-    .map(function (line) {
-      return line.trim();
-    })
-    .filter(Boolean);
+  const lines =
+    value
+      .split(/\r?\n/)
+      .map(function (line) {
+        return line.trim();
+      })
+      .filter(Boolean);
 
   if (lines.length === 0) {
+
     throw new Error(
       "Please enter contact information."
     );
@@ -691,37 +851,54 @@ function buildVCardPayload() {
 
   lines.forEach(function (line) {
 
-    const lower = line.toLowerCase();
+    const lower =
+      line.toLowerCase();
 
     if (
       lower.startsWith("name:")
     ) {
-      name = line.slice(5).trim();
+
+      name =
+        line
+          .slice(5)
+          .trim();
     }
 
     if (
       lower.startsWith("phone:")
     ) {
-      phone = line.slice(6).trim();
+
+      phone =
+        line
+          .slice(6)
+          .trim();
     }
 
     if (
       lower.startsWith("email:")
     ) {
-      email = line.slice(6).trim();
+
+      email =
+        line
+          .slice(6)
+          .trim();
     }
 
   });
 
   /*
-    If no labels were supplied, use the first line as name.
+    If no labels were supplied,
+    use the first line as name.
   */
 
   if (!name) {
-    name = lines[0];
+
+    name =
+      lines[0];
   }
 
   if (!name) {
+
     throw new Error(
       "Please enter at least a contact name."
     );
@@ -731,6 +908,7 @@ function buildVCardPayload() {
     email &&
     !isValidEmail(email)
   ) {
+
     throw new Error(
       "Please enter a valid contact email."
     );
@@ -739,9 +917,12 @@ function buildVCardPayload() {
   let vCard =
     "BEGIN:VCARD\n" +
     "VERSION:3.0\n" +
-    "FN:" + escapeVCardValue(name) + "\n";
+    "FN:" +
+    escapeVCardValue(name) +
+    "\n";
 
   if (phone) {
+
     vCard +=
       "TEL:" +
       escapeVCardValue(phone) +
@@ -749,13 +930,15 @@ function buildVCardPayload() {
   }
 
   if (email) {
+
     vCard +=
       "EMAIL:" +
       escapeVCardValue(email) +
       "\n";
   }
 
-  vCard += "END:VCARD";
+  vCard +=
+    "END:VCARD";
 
   return vCard;
 }
@@ -777,9 +960,11 @@ function escapeVCardValue(value) {
 
 function buildWhatsAppPayload() {
 
-  const value = getGenericInput();
+  const value =
+    getGenericInput();
 
   if (!value) {
+
     throw new Error(
       "Please enter a WhatsApp number or link."
     );
@@ -797,8 +982,12 @@ function buildWhatsAppPayload() {
     let url;
 
     try {
-      url = new URL(value);
+
+      url =
+        new URL(value);
+
     } catch (error) {
+
       throw new Error(
         "Please enter a valid WhatsApp link."
       );
@@ -808,6 +997,7 @@ function buildWhatsAppPayload() {
       url.protocol !== "http:" &&
       url.protocol !== "https:"
     ) {
+
       throw new Error(
         "Please enter a valid WhatsApp link."
       );
@@ -816,18 +1006,23 @@ function buildWhatsAppPayload() {
     return url.href;
   }
 
-  const phone = value.replace(/[^\d]/g, "");
+  const phone =
+    value.replace(/[^\d]/g, "");
 
   if (
     phone.length < 7 ||
     phone.length > 15
   ) {
+
     throw new Error(
       "Please enter a valid WhatsApp number with country code."
     );
   }
 
-  return "https://wa.me/" + phone;
+  return (
+    "https://wa.me/" +
+    phone
+  );
 }
 
 
@@ -837,9 +1032,11 @@ function buildWhatsAppPayload() {
 
 function buildInstagramPayload() {
 
-  const value = getGenericInput();
+  const value =
+    getGenericInput();
 
   if (!value) {
+
     throw new Error(
       "Please enter an Instagram profile."
     );
@@ -852,8 +1049,12 @@ function buildInstagramPayload() {
     let url;
 
     try {
-      url = new URL(value);
+
+      url =
+        new URL(value);
+
     } catch (error) {
+
       throw new Error(
         "Please enter a valid Instagram URL."
       );
@@ -863,6 +1064,7 @@ function buildInstagramPayload() {
       url.protocol !== "http:" &&
       url.protocol !== "https:"
     ) {
+
       throw new Error(
         "Please enter a valid Instagram URL."
       );
@@ -871,19 +1073,25 @@ function buildInstagramPayload() {
     return url.href;
   }
 
-  const username = value
-    .replace(/^@/, "")
-    .trim();
+  const username =
+    value
+      .replace(/^@/, "")
+      .trim();
 
   if (
     !/^[a-zA-Z0-9._]+$/.test(username)
   ) {
+
     throw new Error(
       "Please enter a valid Instagram username."
     );
   }
 
-  return "https://www.instagram.com/" + username + "/";
+  return (
+    "https://www.instagram.com/" +
+    username +
+    "/"
+  );
 }
 
 
@@ -893,9 +1101,11 @@ function buildInstagramPayload() {
 
 function buildLocationPayload() {
 
-  const value = getGenericInput();
+  const value =
+    getGenericInput();
 
   if (!value) {
+
     throw new Error(
       "Please enter a location or map link."
     );
@@ -912,8 +1122,12 @@ function buildLocationPayload() {
     let url;
 
     try {
-      url = new URL(value);
+
+      url =
+        new URL(value);
+
     } catch (error) {
+
       throw new Error(
         "Please enter a valid map URL."
       );
@@ -923,6 +1137,7 @@ function buildLocationPayload() {
       url.protocol !== "http:" &&
       url.protocol !== "https:"
     ) {
+
       throw new Error(
         "Please enter a valid map URL."
       );
@@ -935,14 +1150,18 @@ function buildLocationPayload() {
     Simple latitude,longitude support.
   */
 
-  const coordinates = value.match(
-    /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/
-  );
+  const coordinates =
+    value.match(
+      /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/
+    );
 
   if (coordinates) {
 
-    const latitude = Number(coordinates[1]);
-    const longitude = Number(coordinates[2]);
+    const latitude =
+      Number(coordinates[1]);
+
+    const longitude =
+      Number(coordinates[2]);
 
     if (
       latitude < -90 ||
@@ -950,6 +1169,7 @@ function buildLocationPayload() {
       longitude < -180 ||
       longitude > 180
     ) {
+
       throw new Error(
         "Please enter valid coordinates."
       );
@@ -964,8 +1184,8 @@ function buildLocationPayload() {
   }
 
   /*
-    For normal place/address text, create a Google Maps
-    search URL.
+    For normal place/address text,
+    create a Google Maps search URL.
   */
 
   return (
@@ -984,92 +1204,131 @@ function loadQRCodeLibrary() {
   if (
     typeof QRCode !== "undefined"
   ) {
+
     return Promise.resolve();
   }
 
   if (qrLibraryPromise) {
+
     return qrLibraryPromise;
   }
 
-  qrLibraryPromise = new Promise(function (resolve, reject) {
+  qrLibraryPromise =
+    new Promise(function (
+      resolve,
+      reject
+    ) {
 
-    const existingScript =
-      document.querySelector(
-        'script[data-qrnavi-qrcode-library="true"]'
-      );
+      const existingScript =
+        document.querySelector(
+          'script[data-qrnavi-qrcode-library="true"]'
+        );
 
-    if (existingScript) {
+      if (existingScript) {
 
-      existingScript.addEventListener(
-        "load",
-        function () {
-          if (typeof QRCode !== "undefined") {
-            resolve();
-          } else {
+        /*
+          The script may already be loading.
+        */
+
+        if (
+          typeof QRCode !== "undefined"
+        ) {
+
+          resolve();
+
+          return;
+        }
+
+        existingScript.addEventListener(
+          "load",
+          function () {
+
+            if (
+              typeof QRCode !== "undefined"
+            ) {
+
+              resolve();
+
+            } else {
+
+              reject(
+                new Error(
+                  "QR library loaded incorrectly."
+                )
+              );
+            }
+
+          },
+          {
+            once: true
+          }
+        );
+
+        existingScript.addEventListener(
+          "error",
+          function () {
+
             reject(
               new Error(
-                "QR library loaded incorrectly."
+                "QR library could not be loaded."
+              )
+            );
+
+          },
+          {
+            once: true
+          }
+        );
+
+        return;
+      }
+
+      const script =
+        document.createElement("script");
+
+      script.src =
+        QRNAVI_CONFIG.libraryUrl;
+
+      script.async = true;
+
+      script.dataset.qrnaviQrcodeLibrary =
+        "true";
+
+      script.onload =
+        function () {
+
+          if (
+            typeof QRCode !== "undefined"
+          ) {
+
+            resolve();
+
+          } else {
+
+            reject(
+              new Error(
+                "QR library is unavailable."
               )
             );
           }
-        },
-        { once: true }
-      );
 
-      existingScript.addEventListener(
-        "error",
+        };
+
+      script.onerror =
         function () {
+
           reject(
             new Error(
               "QR library could not be loaded."
             )
           );
-        },
-        { once: true }
+
+        };
+
+      document.head.appendChild(
+        script
       );
-
-      return;
-    }
-
-    const script =
-      document.createElement("script");
-
-    script.src =
-      QRNAVI_CONFIG.libraryUrl;
-
-    script.async = true;
-
-    script.dataset.qrnaviQrcodeLibrary =
-      "true";
-
-    script.onload = function () {
-
-      if (
-        typeof QRCode !== "undefined"
-      ) {
-        resolve();
-      } else {
-        reject(
-          new Error(
-            "QR library is unavailable."
-          )
-        );
-      }
-
-    };
-
-    script.onerror = function () {
-
-      reject(
-        new Error(
-          "QR library could not be loaded."
-        )
-      );
-
-    };
-
-    document.head.appendChild(script);
-  });
+    });
 
   return qrLibraryPromise;
 }
@@ -1084,31 +1343,63 @@ function generateQRCode(payload) {
   if (
     typeof QRCode === "undefined"
   ) {
-    throw new Error(
-      "QR library is unavailable."
+
+    return Promise.reject(
+      new Error(
+        "QR library is unavailable."
+      )
     );
   }
 
   if (!qrOutput) {
+
     return Promise.resolve();
   }
 
   /*
-    Keep the final QR output clean.
+    Remove previous QR.
   */
   qrOutput.innerHTML = "";
 
   /*
-    Create the QR slightly smaller than the final canvas.
-    The remaining space becomes the required white quiet zone.
+    Calculate the actual QR drawing area.
+
+    Final image:
+    320px
+
+    Quiet zone:
+    48px left
+    48px right
+    48px top
+    48px bottom
+
+    Actual QR:
+    224px x 224px
   */
-  const quietZone = QRNAVI_CONFIG.quietZone;
+  const finalSize =
+    QRNAVI_CONFIG.size;
+
+  const quietZone =
+    QRNAVI_CONFIG.quietZone;
 
   const innerSize =
-    QRNAVI_CONFIG.size - (quietZone * 2);
+    finalSize -
+    (quietZone * 2);
+
+  if (innerSize <= 0) {
+
+    return Promise.reject(
+      new Error(
+        "Invalid QR size configuration."
+      )
+    );
+  }
 
   /*
-    Temporary container used only for qrcodejs rendering.
+    Temporary off-screen container.
+
+    qrcodejs generates the QR here.
+    It is never shown to the user.
   */
   const temporaryContainer =
     document.createElement("div");
@@ -1131,6 +1422,9 @@ function generateQRCode(payload) {
   temporaryContainer.style.background =
     QRNAVI_CONFIG.background;
 
+  temporaryContainer.style.overflow =
+    "hidden";
+
   temporaryContainer.setAttribute(
     "aria-hidden",
     "true"
@@ -1141,178 +1435,302 @@ function generateQRCode(payload) {
   );
 
   /*
-    Generate the actual QR modules.
+    Generate QR modules.
   */
-  currentQRCode = new QRCode(
-    temporaryContainer,
-    {
-      text: payload,
+  try {
 
-      width: innerSize,
-      height: innerSize,
+    new QRCode(
+      temporaryContainer,
+      {
+        text: payload,
 
-      colorDark:
-        QRNAVI_CONFIG.foreground,
+        width: innerSize,
 
-      colorLight:
-        QRNAVI_CONFIG.background,
+        height: innerSize,
 
-      correctLevel:
-        QRCode.CorrectLevel.M
-    }
-  );
+        colorDark:
+          QRNAVI_CONFIG.foreground,
+
+        colorLight:
+          QRNAVI_CONFIG.background,
+
+        correctLevel:
+          QRCode.CorrectLevel.M
+      }
+    );
+
+  } catch (error) {
+
+    temporaryContainer.remove();
+
+    return Promise.reject(error);
+  }
 
   /*
-    qrcodejs normally creates a canvas and/or image.
-    Wait one frame so the rendered QR is available.
+    Wait for qrcodejs to place its canvas/image.
   */
-  return new Promise(function (resolve, reject) {
+  return waitForQRCodeSource(
+    temporaryContainer
+  )
+    .then(function (source) {
 
-    requestAnimationFrame(function () {
+      /*
+        Create the FINAL PNG canvas.
+        This is the canvas that the user sees
+        and the download system downloads.
+      */
+      const finalCanvas =
+        document.createElement("canvas");
 
-      try {
+      finalCanvas.width =
+        finalSize;
 
-        const sourceCanvas =
-          temporaryContainer.querySelector(
+      finalCanvas.height =
+        finalSize;
+
+      finalCanvas.setAttribute(
+        "aria-label",
+        "Generated QR code"
+      );
+
+      finalCanvas.setAttribute(
+        "role",
+        "img"
+      );
+
+      finalCanvas.style.display =
+        "block";
+
+      finalCanvas.style.width =
+        finalSize + "px";
+
+      finalCanvas.style.height =
+        finalSize + "px";
+
+      const context =
+        finalCanvas.getContext(
+          "2d"
+        );
+
+      if (!context) {
+
+        throw new Error(
+          "QR canvas could not be created."
+        );
+      }
+
+      /*
+        IMPORTANT:
+
+        Disable image smoothing so that QR modules
+        stay sharp when the 224px source is placed
+        inside the final 320px image.
+      */
+      context.imageSmoothingEnabled =
+        false;
+
+      /*
+        Fill the complete final image
+        with the QR background.
+      */
+      context.fillStyle =
+        QRNAVI_CONFIG.background;
+
+      context.fillRect(
+        0,
+        0,
+        finalSize,
+        finalSize
+      );
+
+      /*
+        Draw actual QR inside the white quiet zone.
+      */
+      context.drawImage(
+        source,
+        quietZone,
+        quietZone,
+        innerSize,
+        innerSize
+      );
+
+      /*
+        Clean up temporary qrcodejs output.
+      */
+      temporaryContainer.remove();
+
+      /*
+        Put ONLY the final canvas into qr-output.
+      */
+      qrOutput.innerHTML = "";
+
+      qrOutput.appendChild(
+        finalCanvas
+      );
+
+      /*
+        Store a stable QR object for other modules.
+      */
+      currentQRCode = {
+        payload: payload,
+
+        canvas: finalCanvas,
+
+        size: finalSize,
+
+        quietZone: quietZone
+      };
+
+      /*
+        Make QR output visible.
+      */
+      qrOutput.hidden =
+        false;
+
+      qrOutput.style.display =
+        "flex";
+
+      qrOutput.style.justifyContent =
+        "center";
+
+      qrOutput.style.alignItems =
+        "center";
+
+      qrOutput.style.overflow =
+        "visible";
+
+      /*
+        Return the final canvas so the caller knows
+        generation is completely finished.
+      */
+      return finalCanvas;
+
+    })
+    .catch(function (error) {
+
+      /*
+        Always remove temporary rendering element
+        if anything goes wrong.
+      */
+      if (
+        temporaryContainer &&
+        temporaryContainer.parentNode
+      ) {
+
+        temporaryContainer.remove();
+      }
+
+      throw error;
+    });
+}
+
+
+/* =========================================================
+   WAIT FOR QR SOURCE
+========================================================= */
+
+function waitForQRCodeSource(
+  container
+) {
+
+  return new Promise(
+    function (
+      resolve,
+      reject
+    ) {
+
+      const startTime =
+        Date.now();
+
+      const timeout =
+        3000;
+
+      function check() {
+
+        const canvas =
+          container.querySelector(
             "canvas"
           );
 
-        const sourceImage =
-          temporaryContainer.querySelector(
+        const image =
+          container.querySelector(
             "img"
           );
 
-        if (!sourceCanvas && !sourceImage) {
-          throw new Error(
-            "QR image was not rendered."
-          );
+        if (canvas) {
+
+          resolve(canvas);
+
+          return;
         }
 
-        /*
-          Final canvas:
-          320 x 320
-          with 16px white quiet zone on all sides.
-        */
-        const finalCanvas =
-          document.createElement("canvas");
+        if (
+          image &&
+          image.complete &&
+          image.naturalWidth > 0
+        ) {
 
-        finalCanvas.width =
-          QRNAVI_CONFIG.size;
+          resolve(image);
 
-        finalCanvas.height =
-          QRNAVI_CONFIG.size;
-
-        finalCanvas.setAttribute(
-          "aria-label",
-          "Generated QR code"
-        );
-
-        finalCanvas.style.display =
-          "block";
-
-        finalCanvas.style.width =
-          QRNAVI_CONFIG.size + "px";
-
-        finalCanvas.style.height =
-          QRNAVI_CONFIG.size + "px";
-
-        const context =
-          finalCanvas.getContext("2d");
-
-        if (!context) {
-          throw new Error(
-            "QR canvas could not be created."
-          );
+          return;
         }
 
-        /*
-          Fill the complete image with the selected
-          QR background color.
-        */
-        context.fillStyle =
-          QRNAVI_CONFIG.background;
+        if (
+          Date.now() -
+            startTime >=
+          timeout
+        ) {
 
-        context.fillRect(
-          0,
-          0,
-          QRNAVI_CONFIG.size,
-          QRNAVI_CONFIG.size
-        );
-
-        /*
-          Draw the actual QR inside the quiet zone.
-        */
-        if (sourceCanvas) {
-
-          context.drawImage(
-            sourceCanvas,
-            quietZone,
-            quietZone,
-            innerSize,
-            innerSize
+          reject(
+            new Error(
+              "QR image was not rendered."
+            )
           );
 
-        } else if (sourceImage) {
-
-          context.drawImage(
-            sourceImage,
-            quietZone,
-            quietZone,
-            innerSize,
-            innerSize
-          );
-
-        } else {
-
-          throw new Error(
-            "QR image source is unavailable."
-          );
+          return;
         }
 
-        /*
-          Replace qrcodejs output with the final,
-          properly padded canvas.
-        */
-        qrOutput.innerHTML = "";
-
-        qrOutput.appendChild(
-          finalCanvas
+        requestAnimationFrame(
+          check
         );
-
-        /*
-          Keep currentQRCode available for the public API.
-        */
-        currentQRCode = {
-          payload: payload,
-          canvas: finalCanvas,
-          size: QRNAVI_CONFIG.size,
-          quietZone: quietZone
-        };
-
-        /*
-          Remove temporary rendering container.
-        */
-        temporaryContainer.remove();
-
-        /*
-          Make sure the QR output is visible.
-        */
-        qrOutput.hidden = false;
-        qrOutput.style.display = "flex";
-        qrOutput.style.justifyContent = "center";
-        qrOutput.style.alignItems = "center";
-
-        resolve();
-
-      } catch (error) {
-
-        temporaryContainer.remove();
-
-        reject(error);
       }
 
-    });
-  });
+      check();
+    }
+  );
+}
+
+
+/* =========================================================
+   WAIT FOR FINAL QR PAINT
+========================================================= */
+
+function waitForQRPaint() {
+
+  return new Promise(
+    function (resolve) {
+
+      /*
+        First browser paint.
+      */
+      requestAnimationFrame(
+        function () {
+
+          /*
+            Second paint gives the browser time
+            to calculate the final layout.
+          */
+          requestAnimationFrame(
+            function () {
+
+              resolve();
+
+            }
+          );
+        }
+      );
+    }
+  );
 }
 
 
@@ -1323,62 +1741,192 @@ function generateQRCode(payload) {
 function scheduleMobileQRScroll() {
 
   /*
-    Only use this behavior on mobile-sized screens.
-    Desktop layout should remain where the user generated it.
+    Only activate automatic scrolling on mobile-sized
+    screens.
+
+    Desktop remains exactly where the user generated QR.
   */
   if (
     !window.matchMedia ||
-    !window.matchMedia("(max-width: 899px)").matches
+    !window.matchMedia(
+      "(max-width: 899px)"
+    ).matches
   ) {
+
     return;
   }
 
   /*
-    Wait until the browser has painted the final QR.
+    Give the browser one additional paint cycle
+    before calculating the exact QR position.
   */
-  requestAnimationFrame(function () {
+  requestAnimationFrame(
+    function () {
 
-    setTimeout(function () {
+      setTimeout(
+        function () {
 
-      if (!qrOutput) {
-        return;
+          if (!qrOutput) {
+            return;
+          }
+
+          const generatedCanvas =
+            qrOutput.querySelector(
+              "canvas"
+            );
+
+          if (!generatedCanvas) {
+            return;
+          }
+
+          scrollToGeneratedQR(
+            generatedCanvas
+          );
+
+        },
+        120
+      );
+    }
+  );
+}
+
+
+/* =========================================================
+   EXACT MOBILE QR SCROLL
+========================================================= */
+
+function scrollToGeneratedQR(
+  canvas
+) {
+
+  /*
+    Get current QR position relative to viewport.
+  */
+  const rect =
+    canvas.getBoundingClientRect();
+
+  /*
+    Detect sticky/fixed header height.
+    This prevents the header from covering the QR.
+  */
+  const header =
+    document.querySelector(
+      ".site-header, header"
+    );
+
+  let headerHeight = 0;
+
+  if (header) {
+
+    const headerRect =
+      header.getBoundingClientRect();
+
+    if (
+      headerRect.height >
+      0
+    ) {
+
+      headerHeight =
+        headerRect.height;
+    }
+  }
+
+  /*
+    Keep some comfortable space below the header.
+  */
+  const topSpacing =
+    Math.max(
+      headerHeight + 20,
+      90
+    );
+
+  /*
+    Current absolute document position of QR.
+  */
+  const currentTop =
+    window.scrollY +
+    rect.top;
+
+  /*
+    Desired position:
+    QR starts below the header instead of
+    remaining at the bottom of the screen.
+  */
+  let targetScroll =
+    currentTop -
+    topSpacing;
+
+  /*
+    Prevent negative scroll.
+  */
+  targetScroll =
+    Math.max(
+      0,
+      targetScroll
+    );
+
+  /*
+    Calculate available viewport height.
+
+    This is used to make sure the complete QR
+    can fit on normal phone screens.
+  */
+  const viewportHeight =
+    window.innerHeight;
+
+  const qrHeight =
+    rect.height;
+
+  /*
+    If QR would still extend below the viewport,
+    move it slightly higher.
+  */
+  const bottomPadding =
+    24;
+
+  const maximumQRBottom =
+    viewportHeight -
+    bottomPadding;
+
+  const projectedQRBottom =
+    topSpacing +
+    qrHeight;
+
+  if (
+    projectedQRBottom >
+    maximumQRBottom
+  ) {
+
+    const extraShift =
+      projectedQRBottom -
+      maximumQRBottom;
+
+    targetScroll +=
+      extraShift;
+  }
+
+  /*
+    Final smooth scroll.
+  */
+  try {
+
+    window.scrollTo(
+      {
+        top: targetScroll,
+        behavior: "smooth"
       }
+    );
 
-      /*
-        Make sure the final QR actually exists before
-        attempting to scroll.
-      */
-      const generatedCanvas =
-        qrOutput.querySelector("canvas");
+  } catch (error) {
 
-      if (!generatedCanvas) {
-        return;
-      }
-
-      /*
-        Centering the QR in the viewport makes it clear
-        that generation has completed and keeps the
-        complete QR visible on normal phone screens.
-      */
-      try {
-
-        qrOutput.scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-          inline: "nearest"
-        });
-
-      } catch (error) {
-
-        /*
-          Fallback for older browsers.
-        */
-        qrOutput.scrollIntoView();
-      }
-
-    }, 100);
-
-  });
+    /*
+      Older browser fallback.
+    */
+    window.scrollTo(
+      0,
+      targetScroll
+    );
+  }
 }
 
 
@@ -1393,7 +1941,8 @@ function getSelectedType() {
   }
 
   return String(
-    qrType.value || "url"
+    qrType.value ||
+    "url"
   ).toLowerCase();
 }
 
@@ -1420,10 +1969,15 @@ function isValidEmail(email) {
 }
 
 
-function isReasonablePhoneNumber(phone) {
+function isReasonablePhoneNumber(
+  phone
+) {
 
   const digits =
-    String(phone).replace(/\D/g, "");
+    String(phone).replace(
+      /\D/g,
+      ""
+    );
 
   return (
     digits.length >= 7 &&
@@ -1436,7 +1990,9 @@ function isReasonablePhoneNumber(phone) {
    UI STATE
 ========================================================= */
 
-function setGeneratingState(isGenerating) {
+function setGeneratingState(
+  isGenerating
+) {
 
   if (!generateButton) {
     return;
@@ -1444,7 +2000,8 @@ function setGeneratingState(isGenerating) {
 
   if (isGenerating) {
 
-    generateButton.disabled = true;
+    generateButton.disabled =
+      true;
 
     generateButton.dataset.originalText =
       generateButton.textContent;
@@ -1454,11 +2011,13 @@ function setGeneratingState(isGenerating) {
 
   } else {
 
-    generateButton.disabled = false;
+    generateButton.disabled =
+      false;
 
     if (
       generateButton.dataset.originalText
     ) {
+
       generateButton.textContent =
         generateButton.dataset.originalText;
     }
@@ -1470,7 +2029,9 @@ function setGeneratingState(isGenerating) {
    ERROR / STATUS MESSAGE
 ========================================================= */
 
-function showMessage(message) {
+function showMessage(
+  message
+) {
 
   clearMessage();
 
@@ -1504,9 +2065,14 @@ function showMessage(message) {
   messageElement.style.fontWeight =
     "600";
 
-  qrOutput.parentElement.appendChild(
-    messageElement
-  );
+  if (
+    qrOutput.parentElement
+  ) {
+
+    qrOutput.parentElement.appendChild(
+      messageElement
+    );
+  }
 }
 
 
@@ -1518,6 +2084,7 @@ function clearMessage() {
     );
 
   if (existingMessage) {
+
     existingMessage.remove();
   }
 }
@@ -1529,30 +2096,43 @@ function clearMessage() {
 ========================================================= */
 
 window.QRNAVI = {
-  getCurrentQRCode: function () {
-    return currentQRCode;
-  },
 
-  getQRCodeOutput: function () {
-    return qrOutput;
-  },
+  getCurrentQRCode:
+    function () {
 
-  getSelectedType: function () {
-    return getSelectedType();
-  },
+      return currentQRCode;
+    },
 
-  getCurrentPayload: function () {
+  getQRCodeOutput:
+    function () {
 
-    try {
-      return buildPayload(
-        getSelectedType()
-      );
-    } catch (error) {
-      return null;
+      return qrOutput;
+    },
+
+  getSelectedType:
+    function () {
+
+      return getSelectedType();
+    },
+
+  getCurrentPayload:
+    function () {
+
+      try {
+
+        return buildPayload(
+          getSelectedType()
+        );
+
+      } catch (error) {
+
+        return null;
+      }
+    },
+
+  generate:
+    function () {
+
+      return handleGenerateClick();
     }
-  },
-
-  generate: function () {
-    return handleGenerateClick();
-  }
 };
